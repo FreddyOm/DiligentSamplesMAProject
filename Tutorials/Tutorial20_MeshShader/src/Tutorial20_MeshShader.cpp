@@ -663,11 +663,6 @@ namespace Diligent
         ImGui::End();
     }
 
-    void Tutorial20_MeshShader::PreWindowResize()
-    {
-        
-    }
-
     void Tutorial20_MeshShader::WindowResize(Uint32 Width, Uint32 Height)
     {
         CreateDepthBuffers();

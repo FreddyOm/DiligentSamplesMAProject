@@ -64,7 +64,6 @@ namespace Diligent
         void LoadTexture();
         void UpdateUI();
 
-        void PreWindowResize() override;
         void WindowResize(Uint32 Width, Uint32 Height) override;
 
         // 2 Pass Depth OC
