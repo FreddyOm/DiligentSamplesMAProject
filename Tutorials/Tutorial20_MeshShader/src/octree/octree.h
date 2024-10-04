@@ -4,19 +4,36 @@
 #include <array>
 #include <vector>
 #include <set>
-#include "DrawTask.h"
+#include "../DrawTask.h"
 
 struct AABB
 {
     DirectX::XMFLOAT3 min = {};
     DirectX::XMFLOAT3 max = {};
+
+    DirectX::XMFLOAT3 Center() const
+    {
+        return {(min.x + max.x) / 2.f, (min.y + max.y) / 2.f, (min.z + max.z) / 2.f};
+    }
 };
 
 extern std::vector<VoxelOC::DrawTask> ObjectBuffer;
 
-constexpr int MaxObjectsPerLeaf() { return 64; }
-bool Intersects(const AABB& first, const AABB& second);
+constexpr int MaxObjectsPerLeaf() { return 32; }
+bool          IntersectAABBAABB(const AABB& first, const AABB& second);
+bool          IntersectAABBPoint(const AABB& first, const DirectX::XMFLOAT3& second);
 extern AABB   GetObjectBounds(int index);
+
+struct DebugInfo
+{
+    size_t processedIndices = 0;
+    size_t acceptedIndices  = 0;
+    size_t skippedIndices   = 0;
+    size_t minIndex         = INT_MAX;
+    size_t maxIndex         = 0;
+    size_t minIndexSkipped  = INT_MAX;
+    size_t maxIndexSkipped  = 0;
+};
 
 template<typename T>
 class OctreeNode
@@ -29,9 +46,11 @@ public:
     unsigned long long         contentOccupationMask = 0;
     unsigned int               childOccupationMask   = 0;
 
+    DebugInfo* getGridIndicesDebugInfo = nullptr;
+    DebugInfo* insertOctreeDebugInfo   = nullptr;
 
-    OctreeNode(const AABB& bounds) :
-        bounds(bounds), isLeaf(true)
+    OctreeNode(const AABB& bounds, DebugInfo* getGridIdicesDebugInfo, DebugInfo* insertOctreeDebugInfo) :
+        bounds(bounds), isLeaf(true), getGridIndicesDebugInfo(getGridIdicesDebugInfo), insertOctreeDebugInfo(insertOctreeDebugInfo)
     {
         children.fill(nullptr);
         objectIndices.reserve(MaxObjectsPerLeaf());
@@ -49,21 +68,36 @@ public:
         }
     }
 
-    void GetAllGridIndices(std::set<int>& gridIndexBuffer)
+    void GetAllGridIndices(std::vector<int>& gridIndexBuffer, std::vector<char>& duplicateBuffer, std::vector<VoxelOC::GPUOctreeNode>& octreeNodeBuffer)
     {
         // Check for children (Buttom Up)
-        if (childOccupationMask > 0)
+        for (int i = 0; i < children.size(); ++i)
         {
-            for (int i = 0; i < children.size(); ++i)
-            {
-                if (childOccupationMask & (0b00000001 << i))
-                    children[i]->GetAllGridIndices(gridIndexBuffer);
-            }
+            //if (childOccupationMask & (0b00000001 << i))
+            if (children[i] != nullptr)
+                children[i]->GetAllGridIndices(gridIndexBuffer, duplicateBuffer, octreeNodeBuffer);
         }
 
+        // Create octree node data for gpu
+        VoxelOC::GPUOctreeNode ocNode;
+        ocNode.childrenStartIndex = static_cast<int>(gridIndexBuffer.size());
+        ocNode.numChildren        = static_cast<int>(objectIndices.size());
+        ocNode.minAndIsFull       = DirectX::XMFLOAT4{bounds.min.x, bounds.min.y, bounds.min.z, objectIndices.size() >= MaxObjectsPerLeaf() ? 1.0f : 0.0f};
+        ocNode.max                = DirectX::XMFLOAT4{bounds.max.x, bounds.max.y, bounds.max.z, 0};
+
+        // @TODO: Check if it can be adventageous to treat nodes in a tree fashion and collaps full nodes to a full parent node!
+        if (objectIndices.size() > 0)       // Only insert nodes which actually store voxels. Makes it easier to iterate in depth pre-pass
+            octreeNodeBuffer.push_back(std::move(ocNode));
+
         // Add own indices if present
-        for (auto& index : objectIndices)
-            gridIndexBuffer.insert(index);
+        for (int index = 0; index < objectIndices.size(); ++index)
+        {
+            if (duplicateBuffer[objectIndices[index]] == 0)
+            {
+                gridIndexBuffer.push_back(objectIndices[index]) ;
+                duplicateBuffer[objectIndices[index]] = 1;
+            }
+        }
     }
 
     void SplitNode()
@@ -78,7 +112,8 @@ public:
 
         for (int i = 0; i < 8; ++i)
         {
-            DirectX::XMFLOAT3 newMin, newMax;
+            DirectX::XMFLOAT3 newMin{};
+            DirectX::XMFLOAT3 newMax{};
 
             newMin.x = (i & 1) ? center.x : bounds.min.x;
             newMin.y = (i & 2) ? center.y : bounds.min.y;
@@ -87,8 +122,7 @@ public:
             newMax.y = (i & 2) ? bounds.max.y : center.y;
             newMax.z = (i & 4) ? bounds.max.z : center.z;
 
-            children[i] = new OctreeNode({newMin, newMax});
-            childOccupationMask |= 0b00000001 << i;
+            children[i] = new OctreeNode({newMin, newMax}, getGridIndicesDebugInfo, insertOctreeDebugInfo);
         }
 
         isLeaf = false;
@@ -96,37 +130,77 @@ public:
 
     void InsertObject(int objectIndex, const AABB objectBounds)
     {
-        // Check if object needs to be inside this node
-        if (!Intersects(bounds, objectBounds))
-            return;
+        OctreeNode*              currentNode = this;
+        std::vector<OctreeNode*> path;
 
-        if (isLeaf && objectIndices.size() < MaxObjectsPerLeaf())
+        ++insertOctreeDebugInfo->processedIndices;
+        insertOctreeDebugInfo->minIndex = insertOctreeDebugInfo->minIndex > objectIndex ? objectIndex : insertOctreeDebugInfo->minIndex;
+        insertOctreeDebugInfo->maxIndex = insertOctreeDebugInfo->maxIndex < objectIndex ? objectIndex : insertOctreeDebugInfo->maxIndex;
+
+        while (true)
         {
-            objectIndices.push_back(objectIndex);
-        }
-        else
-        {
-            if (isLeaf)
+            if (!IntersectAABBPoint(bounds, objectBounds.Center()))
             {
-                SplitNode();
-
-                // Insert existing objects in child nodes
-                for (int index : objectIndices)
-                {
-                    // You'd need to get the bounds for this object from somewhere
-                    AABB existingObjectBounds = GetObjectBounds(index);
-
-                    for (auto& child : children)
-                        child->InsertObject(index, existingObjectBounds);
-                }
-                contentOccupationMask = 0;
-                objectIndices.clear(); // Clear indices of the splitted node
+                ++insertOctreeDebugInfo->skippedIndices;
+                return;
             }
 
-            // Insert new object in child nodes
-            for (auto& child : children)
+            path.push_back(currentNode);
+
+            if (currentNode->isLeaf)
             {
-                child->InsertObject(objectIndex, objectBounds);
+                if (currentNode->objectIndices.size() < MaxObjectsPerLeaf())
+                {
+                    currentNode->objectIndices.push_back(objectIndex);
+                    ++insertOctreeDebugInfo->acceptedIndices;
+                    return;
+                }
+                else
+                {
+                    // Need to split this node
+                    currentNode->SplitNode();
+                    // Re-distribute existing objects
+                    for (int index : currentNode->objectIndices)
+                    {
+
+                        if (index == 103)
+                        {
+                            ++insertOctreeDebugInfo->acceptedIndices;
+                        }
+
+                        AABB existingBounds = GetObjectBounds(index);
+                        for (auto& child : currentNode->children)
+                        {
+                            if (IntersectAABBPoint(child->bounds, existingBounds.Center()))
+                            {
+                                child->objectIndices.push_back(index);
+                            }
+                        }
+                    }
+                    currentNode->objectIndices.clear();
+                    // Continue to insert the new object
+                }
+            }
+
+            // Find the appropriate child
+            bool foundChild = false;
+
+            for (auto& child : currentNode->children)
+            {
+                if (IntersectAABBPoint(child->bounds, objectBounds.Center()))
+                {
+                    currentNode = child;
+                    foundChild  = true;
+                    break;                      // Breaking here is fatal when checking for intersection with an AABB!
+                }
+            }
+
+            if (!foundChild)
+            {
+                // Object doesn't fit in any child, insert it here
+                currentNode->objectIndices.push_back(objectIndex);
+                ++insertOctreeDebugInfo->skippedIndices;
+                return;
             }
         }
     }

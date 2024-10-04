@@ -21,11 +21,13 @@ set(SHADERS
     assets/cube_msh.hlsl
     assets/cube_psh.hlsl
     assets/structures.fxh
+    assets/two-pass-depth-oc.hlsl
 )
 
 set(ASSETS
     assets/DGLogo.png
     assets/models/suzanne.fbx
+    assets/models/sponza.fbx
 )
 
 add_sample_app("Tutorial20_MeshShader" "DiligentSamples/Tutorials" "${SOURCE}" "${INCLUDE}" "${SHADERS}" "${ASSETS}")
