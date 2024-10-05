@@ -37,6 +37,7 @@
 #include <set>
 #include <unordered_set>
 #include <d3d12.h>
+#include "../../../../DiligentCore/Graphics/GraphicsEngineD3D12/include/d3dx12_win.h"
 
 #define VOXELIZER_IMPLEMENTATION
 #include "voxelizer.h"  // Voxelizer
@@ -50,7 +51,6 @@ namespace Diligent
     {
     
         #include "../assets/structures.fxh"
-#include "../../../../DiligentCore/Graphics/GraphicsEngineD3D12/include/d3dx12_win.h"
         
         struct DrawStatistics
         {
@@ -551,6 +551,40 @@ namespace Diligent
     
         if (m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture"))
             m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture")->Set(m_CubeTextureSRV);
+
+        {
+            // Create depth pass pipeline state
+            GraphicsPipelineStateCreateInfo PSOCreateDepthOnlyPLInfo;
+            PipelineStateDesc&              PSODepthOnlyPLDesc = PSOCreateDepthOnlyPLInfo.PSODesc;
+
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable      = true;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthFunc        = COMPARISON_FUNC_LESS;
+
+            // Disable color output
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.NumRenderTargets = 0;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RTVFormats[0]    = TEX_FORMAT_UNKNOWN;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DSVFormat        = m_pSwapChain->GetDesc().DepthBufferFormat;
+
+            // Mesh shading pipeline setup
+            PSODepthOnlyPLDesc.Name         = "Depth only pipeline";
+            PSODepthOnlyPLDesc.PipelineType = PIPELINE_TYPE_MESH;
+
+            // No pixel shader needed for basic depth-only pass
+            PSOCreateDepthOnlyPLInfo.pAS = pAS;
+            PSOCreateDepthOnlyPLInfo.pMS = pMS;
+            PSOCreateDepthOnlyPLInfo.pPS = nullptr;
+
+            // Create the pipeline state
+            m_pDevice->CreateGraphicsPipelineState(PSOCreateDepthOnlyPLInfo, &m_pDepthOnlyPSO);
+            VERIFY_EXPR(m_pDepthOnlyPSO != nullptr);
+
+            // Create and populate the SRB
+            m_pDepthOnlyPSO->CreateShaderResourceBinding(&m_pDepthOnlySRB, true);
+            VERIFY_EXPR(m_pDepthOnlySRB != nullptr);
+
+            // Bind resources if necessary (e.g., constant buffers for transformations)
+        }
     }
 
     void Tutorial20_MeshShader::CreateDepthBuffers()
@@ -638,9 +672,25 @@ namespace Diligent
         PrevDepthSRVDesc.ViewType = TEXTURE_VIEW_SHADER_RESOURCE;
         m_pPrevDepthBuffer->CreateView(PrevDepthSRVDesc, &m_pPrevDepthBufferSRV);
         VERIFY_EXPR(m_pPrevDepthBufferSRV != nullptr);
-
     }
-        
+
+    void Tutorial20_MeshShader::DepthPrepass() const
+    {
+        m_pImmediateContext->SetPipelineState(m_pDepthOnlyPSO);
+        m_pImmediateContext->CommitShaderResources(m_pDepthOnlySRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+        // Set depth-stencil view
+        auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
+        m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+        // Draw best occluders
+        //Uint32 drawTaskCount = 32;  // @TODO: Change this to match number of best occluders!
+        //VERIFY_EXPR(drawTaskCount % ASGroupSize == 0);
+
+        //DrawMeshAttribs drawAttrs{drawTaskCount, DRAW_FLAG_VERIFY_ALL};
+        //m_pImmediateContext->DrawMesh(drawAttrs);
+    }
+    
     void Tutorial20_MeshShader::UpdateUI()
     {
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
@@ -693,27 +743,19 @@ namespace Diligent
     
     // Render a frame
     void Tutorial20_MeshShader::Render()
-    {
-        
+    {        
         auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
         // Clear the back buffer and depth buffer
         const float ClearColor[] = {0.350f, 0.350f, 0.350f, 1.0f};
         m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    
 
         // Reset statistics
         DrawStatistics stats;
         std::memset(&stats, 0, sizeof(stats));
         m_pImmediateContext->UpdateBuffer(m_pStatisticsBuffer, 0, sizeof(stats), &stats, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     
-        m_pImmediateContext->SetPipelineState(m_pPSO);
-        m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    
-        // Draw best occluders to depth buffer
-
-
         {
             // Map the buffer and write current view, view-projection matrix and other constants.
             MapHelper<Constants> CBConstants(m_pImmediateContext, m_pConstants, MAP_WRITE, MAP_FLAG_DISCARD);
@@ -741,11 +783,18 @@ namespace Diligent
             }
         }
     
+        // Draw best occluders to depth buffer
+        DepthPrepass();
+
+        // Reset pipeline state to normally draw to back buffer
+        m_pImmediateContext->SetPipelineState(m_pPSO);
+        m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
         // Amplification shader executes 32 threads per group and the task count must be aligned to 32
         // to prevent loss of tasks or access outside of the data array.
         VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
     
-        //DrawMeshAttribs drawAttrs{m_DrawTaskCount / ASGroupSize, DRAW_FLAG_VERIFY_ALL};
         DrawMeshAttribs drawAttrs{m_DrawTaskCount, DRAW_FLAG_VERIFY_ALL};
         m_pImmediateContext->DrawMesh(drawAttrs);
     

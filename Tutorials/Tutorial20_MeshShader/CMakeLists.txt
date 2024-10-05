@@ -21,7 +21,7 @@ set(SHADERS
     assets/cube_msh.hlsl
     assets/cube_psh.hlsl
     assets/structures.fxh
-    assets/two-pass-depth-oc.hlsl
+    assets/depth_reprojection_comp.hlsl
 )
 
 set(ASSETS

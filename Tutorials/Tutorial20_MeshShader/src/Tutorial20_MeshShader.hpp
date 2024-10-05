@@ -68,6 +68,7 @@ namespace Diligent
 
         // 2 Pass Depth OC
         void                   CreateDepthBuffers();
+        void DepthPrepass() const;
     
         RefCntAutoPtr<IBuffer>      m_CubeBuffer;
         RefCntAutoPtr<ITextureView> m_CubeTextureSRV;
@@ -92,12 +93,13 @@ namespace Diligent
         RefCntAutoPtr<ITextureView> m_pDepthBufferCpyUAV;
 
         RefCntAutoPtr<ITexture>     m_pPrevDepthBuffer;
-        RefCntAutoPtr<ITextureView> m_pPrevDepthBufferSRV;
-
-    
+        RefCntAutoPtr<ITextureView> m_pPrevDepthBufferSRV;  
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pSRB;
+
+        RefCntAutoPtr<IPipelineState> m_pDepthOnlyPSO;
+        RefCntAutoPtr<IShaderResourceBinding> m_pDepthOnlySRB;
     
         FirstPersonCamera fpc{};
         ViewFrustum       Frustum{};
