@@ -71,8 +71,8 @@ void main(in uint I  : SV_GroupIndex,
     GPUOctreeNode node = OctreeNodes[wg];
     
     // Access node indices for each thread 
-    if ((g_Constants.FrustumCulling == 0 || IsVisible(node.minAndIsFull, node.max))
-        && I < node.numChildren)
+    if ((g_Constants.FrustumCulling == 0 || IsVisible(node.minAndIsFull, node.max)) // frustum culling
+        && I < node.numChildren)                                                    // only draw valid voxels
     {
         DrawTask task = DrawTasks[GridIndices[node.childrenStartIndex + I]];
         float3 pos = task.BasePosAndScale.xyz;

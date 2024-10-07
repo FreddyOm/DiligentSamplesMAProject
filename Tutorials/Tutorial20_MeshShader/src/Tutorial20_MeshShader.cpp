@@ -44,12 +44,12 @@
 
 #include "ufbx/ufbx.h"  // FBX importer
 
+using namespace VCore;
+
 namespace Diligent
 {
-
     namespace
     {
-    
         #include "../assets/structures.fxh"
         
         struct DrawStatistics
@@ -218,6 +218,14 @@ namespace Diligent
         ufbx_free_scene(scene);
         // Do not vx_mesh_free(pVoxelMesh) yet. Do this in the deinitialization routine instead!
     }
+
+    VCore::VectoriMap<VCore::Voxel> Tutorial20_MeshShader::LoadVoxMesh(std::string meshPath)
+    {
+        VoxelFormat format = IVoxelFormat::CreateAndLoad(meshPath);
+        std::vector<VoxelModel> models = format->GetModels();
+
+        return models[0]->QueryVisible(true);
+    }
     
     struct Vec4
     {
@@ -263,6 +271,9 @@ namespace Diligent
        
         DirectX::XMFLOAT3 minMeshDimensions{10000.f, 10000.f, 10000.f};
         DirectX::XMFLOAT3 maxMeshDimensions{-10000.f, -10000.f, -10000.f};
+
+        //auto voxelList = LoadVoxMesh("models/windmill.vox");
+        
 
         // Populate DrawTasks
         for (int i = 0; i < p_voxelMesh->nvertices; ++i)
@@ -447,6 +458,9 @@ namespace Diligent
         PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode              = CULL_MODE_BACK;
         PSOCreateInfo.GraphicsPipeline.RasterizerDesc.FillMode              = FILL_MODE_SOLID; 
         PSOCreateInfo.GraphicsPipeline.RasterizerDesc.FrontCounterClockwise = False;
+        PSOCreateInfo.GraphicsPipeline.RasterizerDesc.DepthBias             = 0;
+        PSOCreateInfo.GraphicsPipeline.RasterizerDesc.DepthBiasClamp        = 0.0f;
+        PSOCreateInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias  = 0.0f;
         PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable         = True;
     
         // Topology is defined in the mesh shader, this value is not used.
@@ -482,6 +496,17 @@ namespace Diligent
     
             m_pDevice->CreateShader(ShaderCI, &pAS);
             VERIFY_EXPR(pAS != nullptr);
+        }
+
+        RefCntAutoPtr<IShader> pASBestOccluders;
+        {
+            ShaderCI.Desc.ShaderType = SHADER_TYPE_AMPLIFICATION;
+            ShaderCI.EntryPoint      = "main";
+            ShaderCI.Desc.Name       = "Mesh shader best occluders - AS";
+            ShaderCI.FilePath        = "cube_bestOC_ash.hlsl";
+
+            m_pDevice->CreateShader(ShaderCI, &pASBestOccluders);
+            VERIFY_EXPR(pASBestOccluders != nullptr);
         }
     
         RefCntAutoPtr<IShader> pMS;
@@ -520,7 +545,7 @@ namespace Diligent
         // clang-format on
         PSODesc.ResourceLayout.ImmutableSamplers    = ImtblSamplers;
         PSODesc.ResourceLayout.NumImmutableSamplers = _countof(ImtblSamplers);
-    
+
         PSOCreateInfo.pAS = pAS;
         PSOCreateInfo.pMS = pMS;
         PSOCreateInfo.pPS = pPS;
@@ -561,6 +586,10 @@ namespace Diligent
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthFunc        = COMPARISON_FUNC_LESS;
 
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBias              = 0;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBiasClamp         = 0.0f;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias   = 0.0f;
+
             // Disable color output
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.NumRenderTargets = 0;
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RTVFormats[0]    = TEX_FORMAT_UNKNOWN;
@@ -569,9 +598,10 @@ namespace Diligent
             // Mesh shading pipeline setup
             PSODepthOnlyPLDesc.Name         = "Depth only pipeline";
             PSODepthOnlyPLDesc.PipelineType = PIPELINE_TYPE_MESH;
+            PSODepthOnlyPLDesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
 
             // No pixel shader needed for basic depth-only pass
-            PSOCreateDepthOnlyPLInfo.pAS = pAS;
+            PSOCreateDepthOnlyPLInfo.pAS = pASBestOccluders;
             PSOCreateDepthOnlyPLInfo.pMS = pMS;
             PSOCreateDepthOnlyPLInfo.pPS = nullptr;
 
@@ -583,7 +613,25 @@ namespace Diligent
             m_pDepthOnlyPSO->CreateShaderResourceBinding(&m_pDepthOnlySRB, true);
             VERIFY_EXPR(m_pDepthOnlySRB != nullptr);
 
-            // Bind resources if necessary (e.g., constant buffers for transformations)
+            // Bind resources
+
+            if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "Statistics"))
+                m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "Statistics")->Set(m_pStatisticsBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
+
+            if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "DrawTasks"))
+                m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "DrawTasks")->Set(m_pDrawTasks->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+
+            if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "GridIndices"))
+                m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "GridIndices")->Set(m_pGridIndices->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+
+            if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "OctreeNodes"))
+                m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "OctreeNodes")->Set(m_pOctreeNodes->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+
+            if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants"))
+                m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants")->Set(m_pConstants);
+
+            if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants"))
+                m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
         }
     }
 
@@ -683,12 +731,21 @@ namespace Diligent
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
         m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-        // Draw best occluders
-        //Uint32 drawTaskCount = 32;  // @TODO: Change this to match number of best occluders!
-        //VERIFY_EXPR(drawTaskCount % ASGroupSize == 0);
+        // Draw best occluders. Task count doesn't change, since the buffers are all the same, we just discard 
+        // more invocations.
+        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
 
-        //DrawMeshAttribs drawAttrs{drawTaskCount, DRAW_FLAG_VERIFY_ALL};
-        //m_pImmediateContext->DrawMesh(drawAttrs);
+        DrawMeshAttribs drawAttrs{m_DrawTaskCount, DRAW_FLAG_VERIFY_ALL};
+        m_pImmediateContext->DrawMesh(drawAttrs);
+        
+        // Copy and store best occluder depth buffer 
+        CopyTextureAttribs storeDepthBufAttribs{};
+        storeDepthBufAttribs.pSrcTexture              = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
+        storeDepthBufAttribs.pDstTexture              = m_pDepthBufferCpy;
+        storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+        storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+
+        m_pImmediateContext->CopyTexture(storeDepthBufAttribs);
     }
     
     void Tutorial20_MeshShader::UpdateUI()
@@ -732,7 +789,7 @@ namespace Diligent
         fpc.SetMoveSpeed(25.f);
     
         LoadTexture();
-        GetPointCloudFromMesh("models/suzanne.fbx");
+        //GetPointCloudFromMesh("models/suzanne.fbx");
         //CreateDrawTasks();
         CreateDrawTasksFromLoadedMesh();
         CreateStatisticsBuffer();
@@ -743,13 +800,13 @@ namespace Diligent
     
     // Render a frame
     void Tutorial20_MeshShader::Render()
-    {        
+    {
         auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
         // Clear the back buffer and depth buffer
         const float ClearColor[] = {0.350f, 0.350f, 0.350f, 1.0f};
         m_pImmediateContext->ClearRenderTarget(pRTV, ClearColor, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
         // Reset statistics
         DrawStatistics stats;
@@ -759,13 +816,13 @@ namespace Diligent
         {
             // Map the buffer and write current view, view-projection matrix and other constants.
             MapHelper<Constants> CBConstants(m_pImmediateContext, m_pConstants, MAP_WRITE, MAP_FLAG_DISCARD);
-            CBConstants->ViewMat        = m_ViewMatrix.Transpose();
-            CBConstants->ViewProjMat    = m_ViewProjMatrix.Transpose();
-            CBConstants->CoTanHalfFov   = m_LodScale * m_CoTanHalfFov;
-            CBConstants->FrustumCulling = m_FrustumCulling ? 1 : 0;
-            CBConstants->OcclusionCulling = m_OcclusionCulling ? 1 : 0;
-            CBConstants->MSDebugViz     = m_MSDebugViz ? 1.0f : 0.0f;
-            CBConstants->OctreeDebugViz   = m_OTDebugViz ? 1.0f : 0.0f;
+            CBConstants->ViewMat                = m_ViewMatrix.Transpose();
+            CBConstants->ViewProjMat            = m_ViewProjMatrix.Transpose();
+            CBConstants->CoTanHalfFov           = m_LodScale * m_CoTanHalfFov;
+            CBConstants->FrustumCulling         = m_FrustumCulling ? 1 : 0;
+            CBConstants->OcclusionCulling       = m_OcclusionCulling ? 1 : 0;
+            CBConstants->MSDebugViz             = m_MSDebugViz ? 1.0f : 0.0f;
+            CBConstants->OctreeDebugViz         = m_OTDebugViz ? 1.0f : 0.0f;
     
             // Calculate frustum planes from view-projection matrix.
             if (m_SyncCamPosition)
@@ -781,10 +838,13 @@ namespace Diligent
     
                 CBConstants->Frustum[i] = plane;
             }
-        }
-    
-        // Draw best occluders to depth buffer
-        DepthPrepass();
+
+            // Draw best occluders to depth buffer
+            DepthPrepass();
+
+            // Clear Depth Stencil to avoid flickering (Remove later, should be able to just )
+            m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        }        
 
         // Reset pipeline state to normally draw to back buffer
         m_pImmediateContext->SetPipelineState(m_pPSO);
@@ -838,7 +898,7 @@ namespace Diligent
             // Store depth buffer of this frame in depth buffer copy resource!
             CopyTextureAttribs storeDepthBufAttribs{};
             storeDepthBufAttribs.pSrcTexture = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
-            storeDepthBufAttribs.pDstTexture = m_pDepthBufferCpy;
+            storeDepthBufAttribs.pDstTexture = m_pPrevDepthBuffer;
             storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
             storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
 

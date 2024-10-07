@@ -32,6 +32,7 @@
 #include "FirstPersonCamera.hpp"
 #include "octree/octree.h"
 #include <AdvancedMath.hpp>
+#include <VCore/VCore.hpp>
 
 
 namespace Diligent
@@ -51,6 +52,7 @@ namespace Diligent
     
     private:
         void GetPointCloudFromMesh(std::string meshPath);
+        VCore::VectoriMap<VCore::Voxel> LoadVoxMesh(std::string meshPath);
         
         void CreateDrawTasksFromLoadedMesh();
         void CreateDrawTasks();
