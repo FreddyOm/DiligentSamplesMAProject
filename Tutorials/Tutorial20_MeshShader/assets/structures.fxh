@@ -2,15 +2,35 @@
 #define GROUP_SIZE 32
 #endif
 
-#ifndef MAX_VOXELS_PER_GROUP
-#define MAX_VOXELS_PER_GROUP 2
-#endif
+//#ifndef MAX_VOXELS_PER_GROUP
+//#define MAX_VOXELS_PER_GROUP 2
+//#endif
 
 // 32 bytes
 struct DrawTask
 {
     float4 BasePosAndScale;     // [x, y, z, xyzScale]
     float4 RandomValue;         // [rand, alignedDrawTaskSize, drawTaskCountPadding, 0]
+    
+};
+
+struct NormalDrawTask   // OctreeLeafNode
+{
+    float LeafNodeBasePosition; // To compute node bounding box for frustum culling 
+    
+    // Payload
+    int startIndex;
+    int dataCount;
+};
+
+struct DepthPrepassDrawTask
+{
+    float4 basePositionAndScale; // [x, y, z, scale]
+};
+
+struct VoxelBuffer
+{
+    float4 BasePositionAndRandVal; // [x, y, z, random value]
 };
 
 // 168 bytes

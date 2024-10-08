@@ -52,7 +52,7 @@ namespace Diligent
     
     private:
         void GetPointCloudFromMesh(std::string meshPath);
-        VCore::VectoriMap<VCore::Voxel> LoadVoxMesh(std::string meshPath);
+        std::vector<VCore::Math::Vec3i> LoadVoxMesh(std::string meshPath);
         
         void CreateDrawTasksFromLoadedMesh();
         void CreateDrawTasks();
@@ -100,9 +100,11 @@ namespace Diligent
         RefCntAutoPtr<IPipelineState>         m_pPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pSRB;
 
-        RefCntAutoPtr<IPipelineState> m_pDepthOnlyPSO;
-        RefCntAutoPtr<IShaderResourceBinding> m_pDepthOnlySRB;
-    
+        RefCntAutoPtr<IPipelineState>           m_pDepthOnlyPSO;
+        RefCntAutoPtr<IShaderResourceBinding>   m_pDepthOnlySRB;
+        StateTransitionDesc                     m_TransitionBarrier[2];
+        StateTransitionDesc                     m_ResetTransitionBarrier[2];
+
         FirstPersonCamera fpc{};
         ViewFrustum       Frustum{};
 

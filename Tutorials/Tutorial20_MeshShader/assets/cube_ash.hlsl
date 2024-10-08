@@ -44,7 +44,7 @@ bool IsVisible(float4 min, float4 max)
 groupshared uint s_TaskCount;
 groupshared uint s_OctreeNodeCount;
 
-[numthreads(GROUP_SIZE, 1, 1)]
+[numthreads(GROUP_SIZE, 1, 1)]          // 64
 void main(in uint I  : SV_GroupIndex,
           in uint wg : SV_GroupID)
 {

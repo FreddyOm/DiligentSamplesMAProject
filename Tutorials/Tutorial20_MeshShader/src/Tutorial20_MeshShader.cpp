@@ -171,12 +171,12 @@ namespace Diligent
     }
     
      vx_point_cloud_t* p_voxelMesh = nullptr;
-     float      voxelSize   = 2.f;
+     float      voxelSize   = 1.f;
     
     Tutorial20_MeshShader::~Tutorial20_MeshShader()
     {
         delete p_occlusionOctreeRoot;
-        // Delete voxelized meshes here!
+        //Delete voxelized meshes here!
         vx_point_cloud_free(p_voxelMesh);
     }
     
@@ -219,27 +219,86 @@ namespace Diligent
         // Do not vx_mesh_free(pVoxelMesh) yet. Do this in the deinitialization routine instead!
     }
 
-    VCore::VectoriMap<VCore::Voxel> Tutorial20_MeshShader::LoadVoxMesh(std::string meshPath)
+    std::vector<Math::Vec3i> Tutorial20_MeshShader::LoadVoxMesh(std::string meshPath)
     {
         VoxelFormat format = IVoxelFormat::CreateAndLoad(meshPath);
         std::vector<VoxelModel> models = format->GetModels();
 
-        return models[0]->QueryVisible(true);
+        VERIFY_EXPR(models.size() > 0);
+
+        auto                      voxelMap = models[0]->QueryVisible(true);
+        std::vector<Math::Vec3i> voxels;
+        voxels.reserve(voxelMap.size());
+        
+        for (auto& voxel : voxelMap)
+        {
+            voxels.push_back(voxel.first);
+        }
+        
+        return voxels;
     }
     
     struct Vec4
     {
         float x, y, z, w;
 
-        Vec4(Diligent::float4& other)
-        {
-            x = other.x;
-            y = other.y;
-            z = other.z;
-            w = other.w;
-        }
+        Vec4(const Diligent::float4& other) :
+            x(other.x), y(other.y), z(other.z), w(other.w)
+        { }
+
+        Vec4() : 
+            x(0.0f), y(0.0f), z(0.0f), w(0.0f)
+            { }
+
+        Vec4(const float x, const float y, const float z, const float w):
+                x(x), y(y), z(z), w(w)
+            { }
 
         bool operator<(const Vec4& other) const
+        {
+            if (x != other.x)
+                return x < other.x;
+
+            if (y != other.y)
+                return y < other.y;
+
+            if (z != other.z)
+                return z < other.z;
+
+            if (w != other.w)
+                return w < other.w;
+
+            return false;
+        }
+
+        bool operator==(const Vec4& other) const
+        {
+            return x == other.x && y == other.y && z == other.z && w == other.w;
+        }
+    };
+
+    struct Vec3
+    {
+        float x, y, z;
+
+        Vec3(const Diligent::float3& other) :
+            x(other.x), y(other.y), z(other.z)
+        {}
+
+        Vec3() :
+            x(0.0f), y(0.0f), z(0.0f)
+        {}
+
+        Vec3(const float x, const float y, const float z) :
+            x(x), y(y), z(z)
+        {}
+
+        Math::Vec3i ToVec3i () const
+        {
+            return Math::Vec3i((int)x, (int)y, (int)z);
+        }
+
+        bool operator<(const Vec3& other) const
         {
             if (x != other.x)
                 return x < other.x;
@@ -254,40 +313,46 @@ namespace Diligent
             return false;
         }
 
-        bool operator==(const Vec4& other) const
+        bool operator==(const Vec3& other) const
         {
-            return x == other.x && y == other.y && z == other.z && w == other.w;
+            return x == other.x && y == other.y && z == other.z;
         }
     };
 
     void Tutorial20_MeshShader::CreateDrawTasksFromLoadedMesh()
     {
         FastRandReal<float> Rnd{0, 0.f, 1.f};
+        //auto                voxelList = LoadVoxMesh("models/windmill.vox");
+        GetPointCloudFromMesh("models/suzanne.fbx");
+
+        auto                voxelList = std::vector<Vec3>(p_voxelMesh->nvertices);
+        for (int i = 0; i < p_voxelMesh->nvertices; ++i)
+        {
+            voxelList[i] = Vec3 {p_voxelMesh->vertices[i].x, p_voxelMesh->vertices[i].y, p_voxelMesh->vertices[i].z};
+        }
     
         // Draw Tasks
         std::vector<DrawTask> DrawTasks;
-        unsigned long long    alignedDrawTaskSize = p_voxelMesh->nvertices + (32 - (p_voxelMesh->nvertices % 32));
+        unsigned long long    alignedDrawTaskSize = voxelList.size() + (32 - (voxelList.size() % 32));
         DrawTasks.resize(alignedDrawTaskSize);
        
         DirectX::XMFLOAT3 minMeshDimensions{10000.f, 10000.f, 10000.f};
         DirectX::XMFLOAT3 maxMeshDimensions{-10000.f, -10000.f, -10000.f};
-
-        //auto voxelList = LoadVoxMesh("models/windmill.vox");
         
-
         // Populate DrawTasks
-        for (int i = 0; i < p_voxelMesh->nvertices; ++i)
+        for (int i = 0; i < voxelList.size(); ++i)
         {
             DrawTask& dst = DrawTasks[i];
+            Math::Vec3i pos = voxelList[i].ToVec3i();
 
-            dst.BasePosAndScale.x   = p_voxelMesh->vertices[i].x;
-            dst.BasePosAndScale.y   = p_voxelMesh->vertices[i].y;
-            dst.BasePosAndScale.z   = p_voxelMesh->vertices[i].z;
+            dst.BasePosAndScale.x   = (float) voxelList[i].x;
+            dst.BasePosAndScale.y   = (float) voxelList[i].y;
+            dst.BasePosAndScale.z   = (float) voxelList[i].z;
             dst.BasePosAndScale.w   = voxelSize / 2.f; // 0.5 .. 1 -> divide by 2 for size from middle point
             
             dst.RandomValue.x       = Rnd();
             dst.RandomValue.y       = static_cast<float>(alignedDrawTaskSize);
-            dst.RandomValue.z       = static_cast<float>(alignedDrawTaskSize - p_voxelMesh->nvertices);
+            dst.RandomValue.z       = static_cast<float>(alignedDrawTaskSize - voxelList.size());
             dst.RandomValue.w       = 0;
 
             minMeshDimensions.x = dst.BasePosAndScale.x < minMeshDimensions.x ? dst.BasePosAndScale.x : minMeshDimensions.x;
@@ -313,7 +378,7 @@ namespace Diligent
 
         {
             // Copy draw tasks to global object buffer for AABB calculations
-            for (int i = 0; i < p_voxelMesh->nvertices; ++i)
+            for (int i = 0; i < voxelList.size(); ++i)
             {
                 VoxelOC::DrawTask task{};
 
@@ -331,7 +396,7 @@ namespace Diligent
             }
 
             // Calculate bounds and add them to octree
-            for (int i = 0; i < p_voxelMesh->nvertices; ++i)
+            for (int i = 0; i < voxelList.size(); ++i)
             {
                 // Calculate bounds
                 DirectX::XMVECTOR minBoundVec = DirectX::XMVectorSubtract(
@@ -408,6 +473,7 @@ namespace Diligent
 
     void Tutorial20_MeshShader::CreateSortedIndexBuffer(std::vector<int>& sortedNodeBuffer)
     {
+        VERIFY_EXPR(sortedNodeBuffer.size() > 0);
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Grid index buffer";
         BuffDesc.Usage             = USAGE_DEFAULT;
@@ -585,10 +651,11 @@ namespace Diligent
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable      = true;
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthFunc        = COMPARISON_FUNC_LESS;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.StencilEnable    = true;
 
-            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBias              = 0;
+           /* PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBias              = 0;
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBiasClamp         = 0.0f;
-            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias   = 0.0f;
+            PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias   = 0.0f;*/
 
             // Disable color output
             PSOCreateDepthOnlyPLInfo.GraphicsPipeline.NumRenderTargets = 0;
@@ -633,6 +700,37 @@ namespace Diligent
             if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants"))
                 m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
         }
+
+        // Set State transitions
+        m_TransitionBarrier[0]                = {};
+        m_TransitionBarrier[0].pResource      = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
+        m_TransitionBarrier[0].OldState       = RESOURCE_STATE_DEPTH_WRITE;
+        m_TransitionBarrier[0].NewState       = RESOURCE_STATE_COPY_SOURCE;
+        m_TransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+        m_TransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
+        m_TransitionBarrier[1]                = {};
+        m_TransitionBarrier[1].pResource      = m_pPrevDepthBuffer;
+        m_TransitionBarrier[1].OldState       = RESOURCE_STATE_UNKNOWN;
+        m_TransitionBarrier[1].NewState       = RESOURCE_STATE_COPY_DEST;
+        m_TransitionBarrier[1].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+        m_TransitionBarrier[1].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
+
+        m_ResetTransitionBarrier[0]                = {};
+        m_ResetTransitionBarrier[0].pResource      = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
+        m_ResetTransitionBarrier[0].OldState       = RESOURCE_STATE_UNKNOWN;
+        m_ResetTransitionBarrier[0].NewState       = RESOURCE_STATE_DEPTH_WRITE;
+        m_ResetTransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+        m_ResetTransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
+        m_ResetTransitionBarrier[1]                 = {};
+        m_ResetTransitionBarrier[1].pResource       = m_pPrevDepthBuffer;
+        m_ResetTransitionBarrier[1].OldState        = RESOURCE_STATE_UNKNOWN;
+        m_ResetTransitionBarrier[1].NewState        = RESOURCE_STATE_COPY_SOURCE;
+        m_ResetTransitionBarrier[1].TransitionType  = STATE_TRANSITION_TYPE_IMMEDIATE;
+        m_ResetTransitionBarrier[1].Flags           = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
     }
 
     void Tutorial20_MeshShader::CreateDepthBuffers()
@@ -738,14 +836,14 @@ namespace Diligent
         DrawMeshAttribs drawAttrs{m_DrawTaskCount, DRAW_FLAG_VERIFY_ALL};
         m_pImmediateContext->DrawMesh(drawAttrs);
         
-        // Copy and store best occluder depth buffer 
-        CopyTextureAttribs storeDepthBufAttribs{};
+        // Copy and store best occluder depth buffer
+        /*CopyTextureAttribs storeDepthBufAttribs{};
         storeDepthBufAttribs.pSrcTexture              = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
         storeDepthBufAttribs.pDstTexture              = m_pDepthBufferCpy;
         storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-        storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-
-        m_pImmediateContext->CopyTexture(storeDepthBufAttribs);
+        storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;*/
+        
+        //m_pImmediateContext->CopyTexture(storeDepthBufAttribs);
     }
     
     void Tutorial20_MeshShader::UpdateUI()
@@ -794,8 +892,8 @@ namespace Diligent
         CreateDrawTasksFromLoadedMesh();
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
-        CreatePipelineState();
         CreateDepthBuffers();
+        CreatePipelineState();
     }
     
     // Render a frame
@@ -899,10 +997,16 @@ namespace Diligent
             CopyTextureAttribs storeDepthBufAttribs{};
             storeDepthBufAttribs.pSrcTexture = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
             storeDepthBufAttribs.pDstTexture = m_pPrevDepthBuffer;
-            storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-            storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+            storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_VERIFY;
+            storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_VERIFY;
+
+            m_pImmediateContext->TransitionResourceStates(2, &m_TransitionBarrier[0]);
 
             m_pImmediateContext->CopyTexture(storeDepthBufAttribs);
+
+            // Transition resources back to initial state
+            m_pImmediateContext->TransitionResourceStates(2, &m_ResetTransitionBarrier[0]);
+            m_pImmediateContext->Flush();
 
             ++m_FrameId;
         }
@@ -922,7 +1026,7 @@ namespace Diligent
         auto SrfPreTransform = GetSurfacePretransformMatrix(float3{0, 0, 1});
     
         // Get projection matrix adjusted to the current screen orientation
-        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 0.01f, 1000.f);
+        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 0.01f, 500.f);
     
         // Compute view and view-projection matrices
         m_ViewMatrix = View * SrfPreTransform;
