@@ -269,8 +269,8 @@ namespace Diligent
         unsigned long long    alignedDrawTaskSize = p_voxelMesh->nvertices + (ASGroupSize - (p_voxelMesh->nvertices % ASGroupSize));
         DrawTasks.resize(alignedDrawTaskSize);
        
-        DirectX::XMFLOAT3 minMeshDimensions{10000.f, 10000.f, 10000.f};
-        DirectX::XMFLOAT3 maxMeshDimensions{-10000.f, -10000.f, -10000.f};
+        float minMeshDimension = 10000.f;
+        float maxMeshDimension = -10000.f;
 
         // Populate DrawTasks
         for (int i = 0; i < p_voxelMesh->nvertices; ++i)
@@ -287,21 +287,21 @@ namespace Diligent
             dst.RandomValue.z       = static_cast<float>(alignedDrawTaskSize - p_voxelMesh->nvertices);
             dst.RandomValue.w       = 0;
 
-            minMeshDimensions.x = dst.BasePosAndScale.x < minMeshDimensions.x ? dst.BasePosAndScale.x : minMeshDimensions.x;
-            minMeshDimensions.y = dst.BasePosAndScale.y < minMeshDimensions.y ? dst.BasePosAndScale.y : minMeshDimensions.y;
-            minMeshDimensions.z = dst.BasePosAndScale.z < minMeshDimensions.z ? dst.BasePosAndScale.z : minMeshDimensions.z;
+            minMeshDimension = (std::min)(dst.BasePosAndScale.x, minMeshDimension);
+            minMeshDimension = (std::min)(dst.BasePosAndScale.y, minMeshDimension);
+            minMeshDimension = (std::min)(dst.BasePosAndScale.z, minMeshDimension);
 
-            maxMeshDimensions.x = dst.BasePosAndScale.x > maxMeshDimensions.x ? dst.BasePosAndScale.x : maxMeshDimensions.x;
-            maxMeshDimensions.y = dst.BasePosAndScale.y > maxMeshDimensions.y ? dst.BasePosAndScale.y : maxMeshDimensions.y;
-            maxMeshDimensions.z = dst.BasePosAndScale.z > maxMeshDimensions.z ? dst.BasePosAndScale.z : maxMeshDimensions.z;
+            maxMeshDimension = (std::max)(dst.BasePosAndScale.x, maxMeshDimension);
+            maxMeshDimension = (std::max)(dst.BasePosAndScale.y, maxMeshDimension);
+            maxMeshDimension = (std::max)(dst.BasePosAndScale.z, maxMeshDimension);
         }
     
         // Add some spatial padding to explicitly include every voxel!
-        minMeshDimensions.x -= voxelSize * 2.f; minMeshDimensions.y -= voxelSize * 2.f; minMeshDimensions.z -= voxelSize * 2.f;
-        maxMeshDimensions.x += voxelSize * 2.f; maxMeshDimensions.y += voxelSize * 2.f; maxMeshDimensions.z += voxelSize * 2.f;
+        minMeshDimension -= voxelSize * 2.f;
+        maxMeshDimension += voxelSize * 2.f; 
 
         //Octree
-        AABB world                        = {minMeshDimensions, maxMeshDimensions};
+        AABB      world = {{minMeshDimension, minMeshDimension, minMeshDimension}, {maxMeshDimension, maxMeshDimension, maxMeshDimension}};
         DebugInfo getGridIndicesDebugInfo;
         DebugInfo insertOctreeDebugInfo;
         p_occlusionOctreeRoot = new OctreeNode<VoxelOC::DrawTask>(world, &getGridIndicesDebugInfo, &insertOctreeDebugInfo);
