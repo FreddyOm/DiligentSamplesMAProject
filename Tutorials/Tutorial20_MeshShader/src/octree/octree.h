@@ -19,7 +19,6 @@ struct AABB
 
 extern std::vector<VoxelOC::DrawTask> ObjectBuffer;
 
-constexpr int MaxObjectsPerLeaf() { return 32; }
 bool          IntersectAABBAABB(const AABB& first, const AABB& second);
 bool          IntersectAABBPoint(const AABB& first, const DirectX::XMFLOAT3& second);
 extern AABB   GetObjectBounds(int index);
@@ -43,23 +42,17 @@ public:
     std::array<OctreeNode*, 8> children              = {};
     std::vector<int>           objectIndices         = {};
     bool                       isLeaf                = {};
-    unsigned long long         contentOccupationMask = 0;
-    unsigned int               childOccupationMask   = 0;
+    unsigned int               maxObjectsPerLeaf     = 0;
 
-    DebugInfo* getGridIndicesDebugInfo = nullptr;
-    DebugInfo* insertOctreeDebugInfo   = nullptr;
-
-    OctreeNode(const AABB& bounds, DebugInfo* getGridIdicesDebugInfo, DebugInfo* insertOctreeDebugInfo) :
-        bounds(bounds), isLeaf(true), getGridIndicesDebugInfo(getGridIdicesDebugInfo), insertOctreeDebugInfo(insertOctreeDebugInfo)
+    OctreeNode(const AABB& bounds,  unsigned int maxObjectsPerLeaf = 64) :
+        bounds(bounds), isLeaf(true), maxObjectsPerLeaf(maxObjectsPerLeaf)
     {
         children.fill(nullptr);
-        objectIndices.reserve(MaxObjectsPerLeaf());
+        objectIndices.reserve(maxObjectsPerLeaf);
     }
 
     ~OctreeNode()
     {
-        contentOccupationMask = 0;
-        childOccupationMask   = 0;
         objectIndices.clear();
         
         for(auto & child : children)
@@ -82,7 +75,7 @@ public:
         VoxelOC::GPUOctreeNode ocNode;
         ocNode.childrenStartIndex = static_cast<int>(gridIndexBuffer.size());
         ocNode.numChildren        = static_cast<int>(objectIndices.size());
-        ocNode.minAndIsFull       = DirectX::XMFLOAT4{bounds.min.x, bounds.min.y, bounds.min.z, objectIndices.size() >= MaxObjectsPerLeaf() ? 1.0f : 0.0f};
+        ocNode.minAndIsFull       = DirectX::XMFLOAT4{bounds.min.x, bounds.min.y, bounds.min.z, objectIndices.size() >= maxObjectsPerLeaf ? 1.0f : 0.0f};
         ocNode.max                = DirectX::XMFLOAT4{bounds.max.x, bounds.max.y, bounds.max.z, 0};
 
         // @TODO: Check if it can be adventageous to treat nodes in a tree fashion and collaps full nodes to a full parent node!
@@ -122,7 +115,7 @@ public:
             newMax.y = (i & 2) ? bounds.max.y : center.y;
             newMax.z = (i & 4) ? bounds.max.z : center.z;
 
-            children[i] = new OctreeNode({newMin, newMax}, getGridIndicesDebugInfo, insertOctreeDebugInfo);
+            children[i] = new OctreeNode({newMin, newMax}, maxObjectsPerLeaf);
         }
 
         isLeaf = false;
@@ -133,15 +126,10 @@ public:
         OctreeNode*              currentNode = this;
         std::vector<OctreeNode*> path;
 
-        ++insertOctreeDebugInfo->processedIndices;
-        insertOctreeDebugInfo->minIndex = insertOctreeDebugInfo->minIndex > objectIndex ? objectIndex : insertOctreeDebugInfo->minIndex;
-        insertOctreeDebugInfo->maxIndex = insertOctreeDebugInfo->maxIndex < objectIndex ? objectIndex : insertOctreeDebugInfo->maxIndex;
-
         while (true)
         {
             if (!IntersectAABBPoint(bounds, objectBounds.Center()))
             {
-                ++insertOctreeDebugInfo->skippedIndices;
                 return;
             }
 
@@ -149,10 +137,9 @@ public:
 
             if (currentNode->isLeaf)
             {
-                if (currentNode->objectIndices.size() < MaxObjectsPerLeaf())
+                if (currentNode->objectIndices.size() < maxObjectsPerLeaf)
                 {
                     currentNode->objectIndices.push_back(objectIndex);
-                    ++insertOctreeDebugInfo->acceptedIndices;
                     return;
                 }
                 else
@@ -162,12 +149,6 @@ public:
                     // Re-distribute existing objects
                     for (int index : currentNode->objectIndices)
                     {
-
-                        if (index == 103)
-                        {
-                            ++insertOctreeDebugInfo->acceptedIndices;
-                        }
-
                         AABB existingBounds = GetObjectBounds(index);
                         for (auto& child : currentNode->children)
                         {
@@ -199,7 +180,6 @@ public:
             {
                 // Object doesn't fit in any child, insert it here
                 currentNode->objectIndices.push_back(objectIndex);
-                ++insertOctreeDebugInfo->skippedIndices;
                 return;
             }
         }

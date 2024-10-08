@@ -1,5 +1,5 @@
 #ifndef GROUP_SIZE
-#define GROUP_SIZE 32
+#define GROUP_SIZE 64
 #endif
 
 #ifndef MAX_VOXELS_PER_GROUP

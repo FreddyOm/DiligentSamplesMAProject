@@ -304,7 +304,7 @@ namespace Diligent
         AABB      world = {{minMeshDimension, minMeshDimension, minMeshDimension}, {maxMeshDimension, maxMeshDimension, maxMeshDimension}};
         DebugInfo getGridIndicesDebugInfo;
         DebugInfo insertOctreeDebugInfo;
-        p_occlusionOctreeRoot = new OctreeNode<VoxelOC::DrawTask>(world, &getGridIndicesDebugInfo, &insertOctreeDebugInfo);
+        p_occlusionOctreeRoot = new OctreeNode<VoxelOC::DrawTask>(world, ASGroupSize);
     
         const DirectX::XMVECTOR voxelSizeOffset = {voxelSize, voxelSize, voxelSize};
 
@@ -390,7 +390,7 @@ namespace Diligent
 
         // Set draw task count and padding
         m_DrawTaskPadding = static_cast<Uint32>(octreeNodeBuffer.size());
-        octreeNodeBuffer.resize(octreeNodeBuffer.size() + 32 - (octreeNodeBuffer.size() % 32));
+        octreeNodeBuffer.resize(octreeNodeBuffer.size() + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
         m_DrawTaskPadding = static_cast<Uint32>(octreeNodeBuffer.size() - m_DrawTaskPadding);
 
         m_DrawTaskCount = static_cast<Uint32>(octreeNodeBuffer.size());
