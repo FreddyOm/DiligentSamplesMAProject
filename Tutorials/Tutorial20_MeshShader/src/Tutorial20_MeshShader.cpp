@@ -266,14 +266,11 @@ namespace Diligent
     
         // Draw Tasks
         std::vector<DrawTask> DrawTasks;
-        unsigned long long    alignedDrawTaskSize = p_voxelMesh->nvertices + (32 - (p_voxelMesh->nvertices % 32));
+        unsigned long long    alignedDrawTaskSize = p_voxelMesh->nvertices + (ASGroupSize - (p_voxelMesh->nvertices % ASGroupSize));
         DrawTasks.resize(alignedDrawTaskSize);
        
         DirectX::XMFLOAT3 minMeshDimensions{10000.f, 10000.f, 10000.f};
         DirectX::XMFLOAT3 maxMeshDimensions{-10000.f, -10000.f, -10000.f};
-
-        //auto voxelList = LoadVoxMesh("models/windmill.vox");
-        
 
         // Populate DrawTasks
         for (int i = 0; i < p_voxelMesh->nvertices; ++i)
@@ -789,7 +786,7 @@ namespace Diligent
         fpc.SetMoveSpeed(25.f);
     
         LoadTexture();
-        //GetPointCloudFromMesh("models/suzanne.fbx");
+        GetPointCloudFromMesh("models/suzanne.fbx");
         //CreateDrawTasks();
         CreateDrawTasksFromLoadedMesh();
         CreateStatisticsBuffer();
