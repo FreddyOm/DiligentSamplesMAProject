@@ -352,7 +352,6 @@ namespace Diligent
             }
         }
 
-
         // Now create a buffer where objects in one node are stored contigously (start index + length)
         // Create octree node meta data for the GPU and set buffers occordingly.
 
@@ -395,7 +394,7 @@ namespace Diligent
         m_DrawTaskPadding = static_cast<Uint32>(octreeNodeBuffer.size() - m_DrawTaskPadding);
 
         m_DrawTaskCount = static_cast<Uint32>(octreeNodeBuffer.size());
-
+        
         for (auto& task : DrawTasks)
         {
             task.RandomValue.x = static_cast<float>(m_DrawTaskCount);
