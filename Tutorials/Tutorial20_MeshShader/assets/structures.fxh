@@ -2,10 +2,6 @@
 #define GROUP_SIZE 32
 #endif
 
-#ifndef MAX_VOXELS_PER_GROUP
-#define MAX_VOXELS_PER_GROUP 2
-#endif
-
 // 32 bytes
 struct DrawTask
 {
