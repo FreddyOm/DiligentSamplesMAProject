@@ -1,5 +1,5 @@
 #ifndef GROUP_SIZE
-#define GROUP_SIZE 64
+#define GROUP_SIZE 32
 #endif
 
 #ifndef MAX_VOXELS_PER_GROUP
@@ -11,6 +11,11 @@ struct DrawTask
 {
     float4 BasePosAndScale;     // [x, y, z, xyzScale]
     float4 RandomValue;         // [rand, alignedDrawTaskSize, drawTaskCountPadding, 0]
+};
+
+struct VoxelBuffer
+{
+    float4 BasePosAndScale; // [ x, y, z, scale ]
 };
 
 // 168 bytes
