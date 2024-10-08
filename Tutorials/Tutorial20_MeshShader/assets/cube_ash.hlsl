@@ -61,7 +61,7 @@ void main(in uint I  : SV_GroupIndex,
     GroupMemoryBarrierWithGroupSync();
 
     // Read the first task arguments in order to get some constant data
-    const uint gid = wg * GROUP_SIZE + I;   
+    const uint gid = wg * GROUP_SIZE + I;
     DrawTask firstTask = DrawTasks[wg];
     float meshletColorRndValue = firstTask.RandomValue.x;
     int taskCount = (int) firstTask.RandomValue.y;

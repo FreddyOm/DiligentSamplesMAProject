@@ -336,8 +336,8 @@ namespace Diligent
         unsigned long long    alignedDrawTaskSize = voxelList.size() + (32 - (voxelList.size() % 32));
         DrawTasks.resize(alignedDrawTaskSize);
        
-        DirectX::XMFLOAT3 minMeshDimensions{10000.f, 10000.f, 10000.f};
-        DirectX::XMFLOAT3 maxMeshDimensions{-10000.f, -10000.f, -10000.f};
+        float minMeshDimension = 10000.f;
+        float maxMeshDimension = -10000.f;
         
         // Populate DrawTasks
         for (int i = 0; i < voxelList.size(); ++i)
@@ -355,21 +355,22 @@ namespace Diligent
             dst.RandomValue.z       = static_cast<float>(alignedDrawTaskSize - voxelList.size());
             dst.RandomValue.w       = 0;
 
-            minMeshDimensions.x = dst.BasePosAndScale.x < minMeshDimensions.x ? dst.BasePosAndScale.x : minMeshDimensions.x;
-            minMeshDimensions.y = dst.BasePosAndScale.y < minMeshDimensions.y ? dst.BasePosAndScale.y : minMeshDimensions.y;
-            minMeshDimensions.z = dst.BasePosAndScale.z < minMeshDimensions.z ? dst.BasePosAndScale.z : minMeshDimensions.z;
+            minMeshDimension   = (std::min)(dst.BasePosAndScale.x, minMeshDimension);
+            minMeshDimension   = (std::min)(dst.BasePosAndScale.y, minMeshDimension);
+            minMeshDimension   = (std::min)(dst.BasePosAndScale.z, minMeshDimension);
 
-            maxMeshDimensions.x = dst.BasePosAndScale.x > maxMeshDimensions.x ? dst.BasePosAndScale.x : maxMeshDimensions.x;
-            maxMeshDimensions.y = dst.BasePosAndScale.y > maxMeshDimensions.y ? dst.BasePosAndScale.y : maxMeshDimensions.y;
-            maxMeshDimensions.z = dst.BasePosAndScale.z > maxMeshDimensions.z ? dst.BasePosAndScale.z : maxMeshDimensions.z;
+            maxMeshDimension = (std::max)(dst.BasePosAndScale.x, maxMeshDimension);
+            maxMeshDimension = (std::max)(dst.BasePosAndScale.y, maxMeshDimension);
+            maxMeshDimension = (std::max)(dst.BasePosAndScale.z, maxMeshDimension);
         }
     
         // Add some spatial padding to explicitly include every voxel!
-        minMeshDimensions.x -= voxelSize * 2.f; minMeshDimensions.y -= voxelSize * 2.f; minMeshDimensions.z -= voxelSize * 2.f;
-        maxMeshDimensions.x += voxelSize * 2.f; maxMeshDimensions.y += voxelSize * 2.f; maxMeshDimensions.z += voxelSize * 2.f;
+        minMeshDimension -= voxelSize * 2.f;
+        maxMeshDimension += voxelSize * 2.f;
 
         //Octree
-        AABB world                        = {minMeshDimensions, maxMeshDimensions};
+
+        AABB      world = {{minMeshDimension, minMeshDimension, minMeshDimension}, {maxMeshDimension, maxMeshDimension, maxMeshDimension}};
         DebugInfo getGridIndicesDebugInfo;
         DebugInfo insertOctreeDebugInfo;
         p_occlusionOctreeRoot = new OctreeNode<VoxelOC::DrawTask>(world, &getGridIndicesDebugInfo, &insertOctreeDebugInfo);
@@ -459,7 +460,7 @@ namespace Diligent
 
         // Set draw task count and padding
         m_DrawTaskPadding = static_cast<Uint32>(octreeNodeBuffer.size());
-        octreeNodeBuffer.resize(octreeNodeBuffer.size() + 32 - (octreeNodeBuffer.size() % 32));
+        octreeNodeBuffer.resize(octreeNodeBuffer.size() + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
         m_DrawTaskPadding = static_cast<Uint32>(octreeNodeBuffer.size() - m_DrawTaskPadding);
 
         m_DrawTaskCount = static_cast<Uint32>(octreeNodeBuffer.size());
