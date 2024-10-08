@@ -628,6 +628,36 @@ namespace Diligent
 
             if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants"))
                 m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
+
+            // Set State transitions
+            m_TransitionBarrier[0]                = {};
+            m_TransitionBarrier[0].pResource      = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
+            m_TransitionBarrier[0].OldState       = RESOURCE_STATE_DEPTH_WRITE;
+            m_TransitionBarrier[0].NewState       = RESOURCE_STATE_COPY_SOURCE;
+            m_TransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+            m_TransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
+            m_TransitionBarrier[1]                = {};
+            m_TransitionBarrier[1].pResource      = m_pPrevDepthBuffer;
+            m_TransitionBarrier[1].OldState       = RESOURCE_STATE_UNKNOWN;
+            m_TransitionBarrier[1].NewState       = RESOURCE_STATE_COPY_DEST;
+            m_TransitionBarrier[1].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+            m_TransitionBarrier[1].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
+
+            m_ResetTransitionBarrier[0]                = {};
+            m_ResetTransitionBarrier[0].pResource      = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
+            m_ResetTransitionBarrier[0].OldState       = RESOURCE_STATE_UNKNOWN;
+            m_ResetTransitionBarrier[0].NewState       = RESOURCE_STATE_DEPTH_WRITE;
+            m_ResetTransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+            m_ResetTransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
+            m_ResetTransitionBarrier[1]                = {};
+            m_ResetTransitionBarrier[1].pResource      = m_pPrevDepthBuffer;
+            m_ResetTransitionBarrier[1].OldState       = RESOURCE_STATE_UNKNOWN;
+            m_ResetTransitionBarrier[1].NewState       = RESOURCE_STATE_COPY_SOURCE;
+            m_ResetTransitionBarrier[1].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+            m_ResetTransitionBarrier[1].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
         }
     }
 
@@ -790,8 +820,8 @@ namespace Diligent
         CreateDrawTasksFromLoadedMesh();
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
-        CreatePipelineState();
         CreateDepthBuffers();
+        CreatePipelineState();
     }
     
     // Render a frame
