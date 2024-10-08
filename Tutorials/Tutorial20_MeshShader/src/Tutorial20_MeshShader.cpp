@@ -920,20 +920,6 @@ namespace Diligent
     
             // Unset render targets
             m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
-
-            // Store depth buffer of this frame in depth buffer copy resource!
-            CopyTextureAttribs storeDepthBufAttribs{};
-            storeDepthBufAttribs.pSrcTexture              = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
-            storeDepthBufAttribs.pDstTexture              = m_pPrevDepthBuffer;
-            storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_VERIFY;
-            storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_VERIFY;
-
-            m_pImmediateContext->TransitionResourceStates(2, &m_TransitionBarrier[0]);
-
-            m_pImmediateContext->CopyTexture(storeDepthBufAttribs);
-
-            // Transition resources back to initial state
-            m_pImmediateContext->TransitionResourceStates(2, &m_ResetTransitionBarrier[0]);
             m_pImmediateContext->Flush();
 
             ++m_FrameId;
