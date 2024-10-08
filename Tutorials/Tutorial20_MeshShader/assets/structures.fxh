@@ -9,7 +9,7 @@ struct DrawTask
     float4 RandomValue;         // [rand, alignedDrawTaskSize, drawTaskCountPadding, 0]
 };
 
-struct VoxelBuffer
+struct VoxelBufData
 {
     float4 BasePosAndScale; // [ x, y, z, scale ]
 };

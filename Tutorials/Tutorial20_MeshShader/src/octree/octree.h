@@ -61,19 +61,19 @@ public:
         }
     }
 
-    void GetAllGridIndices(std::vector<int>& gridIndexBuffer, std::vector<char>& duplicateBuffer, std::vector<VoxelOC::GPUOctreeNode>& octreeNodeBuffer)
+    void GetAllGridIndices(std::vector<VoxelOC::VoxelBufData>& sortedVoxelDataBuf, std::vector<char>& duplicateBuffer, std::vector<VoxelOC::GPUOctreeNode>& octreeNodeBuffer)
     {
         // Check for children (Buttom Up)
         for (int i = 0; i < children.size(); ++i)
         {
             //if (childOccupationMask & (0b00000001 << i))
             if (children[i] != nullptr)
-                children[i]->GetAllGridIndices(gridIndexBuffer, duplicateBuffer, octreeNodeBuffer);
+                children[i]->GetAllGridIndices(sortedVoxelDataBuf, duplicateBuffer, octreeNodeBuffer);
         }
 
         // Create octree node data for gpu
         VoxelOC::GPUOctreeNode ocNode;
-        ocNode.childrenStartIndex = static_cast<int>(gridIndexBuffer.size());
+        ocNode.childrenStartIndex = static_cast<int>(sortedVoxelDataBuf.size());
         ocNode.numChildren        = static_cast<int>(objectIndices.size());
         ocNode.minAndIsFull       = DirectX::XMFLOAT4{bounds.min.x, bounds.min.y, bounds.min.z, objectIndices.size() >= maxObjectsPerLeaf ? 1.0f : 0.0f};
         ocNode.max                = DirectX::XMFLOAT4{bounds.max.x, bounds.max.y, bounds.max.z, 0};
@@ -87,7 +87,7 @@ public:
         {
             if (duplicateBuffer[objectIndices[index]] == 0)
             {
-                gridIndexBuffer.push_back(objectIndices[index]) ;
+                sortedVoxelDataBuf.push_back(objectIndices[index]) ;
                 duplicateBuffer[objectIndices[index]] = 1;
             }
         }

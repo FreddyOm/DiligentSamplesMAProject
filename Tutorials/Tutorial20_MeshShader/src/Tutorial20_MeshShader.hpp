@@ -58,7 +58,7 @@ namespace Diligent
         void CreateDrawTasks();
         
         void CreatePipelineState();        
-        void CreateSortedIndexBuffer(std::vector<int>& sortedNodeBuffer);
+        void CreateSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& sortedNodeBuffer);
         void CreateGPUOctreeNodeBuffer(std::vector<VoxelOC::GPUOctreeNode>& octreeNodeBuffer);
         void CreateStatisticsBuffer();
         void CreateConstantsBuffer();

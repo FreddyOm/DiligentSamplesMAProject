@@ -18,6 +18,11 @@ namespace VoxelOC
         }
     };
 
+    struct VoxelBufData
+    {
+        DirectX::XMFLOAT4 BasePosAndScale; // [ x, y, z, scale ]
+    };
+
     struct GPUOctreeNode
     {
         DirectX::XMFLOAT4 minAndIsFull{};

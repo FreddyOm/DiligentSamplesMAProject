@@ -373,19 +373,19 @@ namespace Diligent
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pDrawTasks);
         VERIFY_EXPR(m_pDrawTasks != nullptr);
         
-        std::vector<int> sortedNodeBuffer{};
+        std::vector<VoxelOC::VoxelBufData>  sortedVoxelDataBuffer{};
         std::vector<char> duplicateBuffer{};
         std::vector<VoxelOC::GPUOctreeNode> octreeNodeBuffer{};
 
-        sortedNodeBuffer.reserve(DrawTasks.size());
+        sortedVoxelDataBuffer.reserve(DrawTasks.size());
         octreeNodeBuffer.reserve(static_cast<int>(DrawTasks.size() / 2.0f));
         duplicateBuffer.resize(DrawTasks.size());
 
         memset(&duplicateBuffer[0], 0, duplicateBuffer.size() * sizeof(char));
 
-        p_occlusionOctreeRoot->GetAllGridIndices(sortedNodeBuffer, duplicateBuffer, octreeNodeBuffer);
+        p_occlusionOctreeRoot->GetAllGridIndices(sortedVoxelDataBuffer, duplicateBuffer, octreeNodeBuffer);
 
-        CreateSortedIndexBuffer(sortedNodeBuffer);
+        CreateSortedIndexBuffer(sortedVoxelDataBuffer);
         CreateGPUOctreeNodeBuffer(octreeNodeBuffer);
 
         // Set draw task count and padding
@@ -402,7 +402,7 @@ namespace Diligent
         }
     }
 
-    void Tutorial20_MeshShader::CreateSortedIndexBuffer(std::vector<int>& sortedNodeBuffer)
+    void Tutorial20_MeshShader::CreateSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& sortedNodeBuffer)
     {
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Grid index buffer";
