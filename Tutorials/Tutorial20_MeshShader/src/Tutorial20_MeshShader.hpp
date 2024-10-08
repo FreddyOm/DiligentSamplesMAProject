@@ -103,7 +103,8 @@ namespace Diligent
         RefCntAutoPtr<IPipelineState> m_pDepthOnlyPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pDepthOnlySRB;
     
-        
+        StateTransitionDesc m_TransitionBarrier[2];
+        StateTransitionDesc m_ResetTransitionBarrier[2];
 
         FirstPersonCamera fpc{};
         ViewFrustum       Frustum{};
