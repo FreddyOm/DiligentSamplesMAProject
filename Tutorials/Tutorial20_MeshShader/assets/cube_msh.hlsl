@@ -136,11 +136,8 @@ void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader 
     
     // Each thread handles only one vertex
     verts[I].Pos = mul(float4(pos + constCubePos[I].xyz * scale, 1.0), g_Constants.ViewProjMat);
-    // Perform perspective division
-    //verts[I].Pos.z /= verts[I].Pos.w;
     verts[I].UV = constCubeUVs[I].xy;
     verts[I].Color = g_Constants.MSDebugViz * getRandomPrimitiveColor((randValue + ((1 - g_Constants.OctreeDebugViz) * 0.1f * gid)) % 1.0f);
-    
     
     // Only the first 12 threads write indices. We must not access the array outside of its bounds.
     if (I < 12)

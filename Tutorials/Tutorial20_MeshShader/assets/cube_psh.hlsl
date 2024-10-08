@@ -27,6 +27,4 @@ void main(in PSInput PSIn,
         PSOut.Color = g_Texture.Sample(g_Texture_sampler, PSIn.UV);
     }
     
-    //float depth = PSIn.Pos.z / PSIn.Pos.w;
-    //PSOut.Color = float4(depth, depth, depth, 1.0f);
 }

@@ -18,7 +18,6 @@ set(INCLUDE
 
 set(SHADERS
     assets/cube_ash.hlsl
-    assets/cube_bestOc_ash.hlsl
     assets/cube_msh.hlsl
     assets/cube_psh.hlsl
     assets/structures.fxh

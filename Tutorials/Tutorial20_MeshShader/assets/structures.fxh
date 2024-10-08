@@ -39,11 +39,10 @@ struct Constants
     float CoTanHalfFov;         // 4
     float MSDebugViz;           // 4
     float OctreeDebugViz;       // 4
-    uint FrustumCulling;        // 4    // @TODO: Change this to single bits in one uint
-    
+    uint FrustumCulling;        // 4
     uint OcclusionCulling;      // 4
-
-    uint3 Padding;              // 12
+    
+    uint3 Padding;
 };
 
 // 32 bytes
