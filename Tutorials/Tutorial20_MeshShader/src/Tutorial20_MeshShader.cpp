@@ -239,13 +239,6 @@ namespace Diligent
 
         VERIFY_EXPR(unorderedPositionBuffer.size() > 0);
         VERIFY_EXPR(minMeshDimension < maxMeshDimension);
-        
-        /*      -> Random value and more for alignment
-            dst.RandomValue.x       = Rnd();
-            dst.RandomValue.y       = static_cast<float>(alignedDrawTaskSize);
-            dst.RandomValue.z       = static_cast<float>(alignedDrawTaskSize - p_voxelMesh->nvertices);
-            dst.RandomValue.w       = 0;
-        */
 
         //Octree
         AABB world = 

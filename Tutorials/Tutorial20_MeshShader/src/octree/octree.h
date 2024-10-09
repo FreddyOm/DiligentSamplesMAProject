@@ -71,6 +71,7 @@ public:
         VoxelOC::OctreeLeafNode ocNode;
         ocNode.VoxelBufStartIndex = static_cast<int>(orderedVoxelDataBuf.size());
         ocNode.VoxelBufIndexCount = static_cast<int>(objectIndices.size());
+        ocNode.BasePosAndScale    = bounds.CenterAndScale();
         
         // @TODO: Check if it can be adventageous to treat nodes in a tree fashion and collaps full nodes to a full parent node!
         if (objectIndices.size() > 0)       // Only insert nodes which actually store voxels. Makes it easier to iterate in depth pre-pass
