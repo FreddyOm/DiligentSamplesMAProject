@@ -83,7 +83,7 @@ namespace Diligent
         Uint64                 m_FrameId               = 1; // Can't signal 0
         const Uint32           m_StatisticsHistorySize = 8;
     
-        static constexpr Int32 ASGroupSize = 32;
+        static constexpr Int32 ASGroupSize = 64;
     
         Uint32                 m_DrawTaskCount = 0;
         Uint32                 m_DepthPassDrawTaskCount = 0;
