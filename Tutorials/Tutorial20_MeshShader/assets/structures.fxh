@@ -15,7 +15,6 @@ struct OctreeLeafNode  // OctreeLeafNode
     int2 Padding;
 };
 
-
 struct DepthPrepassDrawTask
 {
     float4 BasePosAndScale; // [x, y, z, scale]

@@ -12,8 +12,11 @@ set(INCLUDE
     src/Tutorial20_MeshShader.hpp
     src/voxelizer.h
     src/ufbx/ufbx.h
-    src/octree/octree.h
     src/DrawTask.h
+    src/octree/octree.h
+    src/octree/loader/octree_io.h
+    src/octree/loader/octree_io_node.h
+    src/octree/loader/octree_io_voxel_data.h
 )
 
 set(SHADERS

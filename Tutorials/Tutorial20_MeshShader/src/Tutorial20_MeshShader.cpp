@@ -44,8 +44,6 @@
 
 #include "ufbx/ufbx.h"  // FBX importer
 
-using namespace VCore;
-
 namespace Diligent
 {
     namespace
@@ -219,14 +217,6 @@ namespace Diligent
         // Do not vx_mesh_free(pVoxelMesh) yet. Do this in the deinitialization routine instead!
     }
 
-    VCore::VectoriMap<VCore::Voxel> Tutorial20_MeshShader::LoadVoxMesh(std::string meshPath)
-    {
-        VoxelFormat format = IVoxelFormat::CreateAndLoad(meshPath);
-        std::vector<VoxelModel> models = format->GetModels();
-
-        return models[0]->QueryVisible(true);
-    }
-    
     void Tutorial20_MeshShader::CreateDrawTasksFromLoadedMesh()
     {    
         // Draw Tasks

@@ -21,7 +21,6 @@ RWByteAddressBuffer Statistics;
 // Payload will be used in the mesh shader.
 groupshared Payload s_Payload;
 
-
 bool IsVisible(float4 basePosAndScale)
 {
     float4 center = float4(basePosAndScale.xyz, 1.0f);
@@ -34,7 +33,6 @@ bool IsVisible(float4 basePosAndScale)
     }
     return true;
 }
-
 
 // The number of cubes that are visible by the camera,
 // computed by every thread group
@@ -58,7 +56,7 @@ void main(in uint I  : SV_GroupIndex,
     GroupMemoryBarrierWithGroupSync();
 
     // Read the first task arguments in order to get some constant data
-    const uint gid = wg * GROUP_SIZE + I;   
+    const uint gid = wg * GROUP_SIZE + I;
     
     // Get the node for this thread group
     OctreeLeafNode node = OctreeNodes[wg];
