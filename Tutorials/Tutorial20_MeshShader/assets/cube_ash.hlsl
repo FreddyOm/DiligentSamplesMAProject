@@ -3,14 +3,12 @@
 #ifndef SHOW_STATISTICS
 #define SHOW_STATISTICS 1
 #endif
-// Draw task arguments
-StructuredBuffer<DrawTask> DrawTasks;
 
-// Inidces into the drawtask buffer which group adjacent voxels together
-StructuredBuffer<int> GridIndices;
+// Ordered voxel position buffer
+StructuredBuffer<VoxelBufData> VoxelPositionBuffer;
 
-// Description of the spatial layout of the nodes, containing adjacent voxels
-StructuredBuffer<GPUOctreeNode> OctreeNodes;
+// Octree nodes
+StructuredBuffer<OctreeLeafNode> OctreeNodes;
 
 cbuffer cbConstants
 {
@@ -23,12 +21,11 @@ RWByteAddressBuffer Statistics;
 // Payload will be used in the mesh shader.
 groupshared Payload s_Payload;
 
-// The sphere is visible when the distance from each plane is greater than or
-// equal to the radius of the sphere.
-bool IsVisible(float4 min, float4 max)
+
+bool IsVisible(float4 basePosAndScale)
 {
-    float4 center = float4(((max + min).xyz * 0.5f), 1.0f);
-    float radius = length(max - center); // Add some padding for conservative culling
+    float4 center = float4(basePosAndScale.xyz, 1.0f);
+    float radius = 0.71f * abs(basePosAndScale.z); // => diagonal (center-max point) = sqrt(2) * width / 2.0f | => 1/2 sqrt(2) * width
     
     for (int i = 0; i < 6; ++i)
     {
@@ -62,21 +59,22 @@ void main(in uint I  : SV_GroupIndex,
 
     // Read the first task arguments in order to get some constant data
     const uint gid = wg * GROUP_SIZE + I;   
-    DrawTask firstTask = DrawTasks[wg];
-    float meshletColorRndValue = firstTask.RandomValue.x;
-    int taskCount = (int) firstTask.RandomValue.y;
-    int padding = (int) firstTask.RandomValue.z;
     
     // Get the node for this thread group
-    GPUOctreeNode node = OctreeNodes[wg];
+    OctreeLeafNode node = OctreeNodes[wg];
+    
+    float meshletColorRndValue = node.RandomValue.x;
+    int taskCount = (int) node.RandomValue.y;
+    int padding = (int) node.RandomValue.z;
+    
     
     // Access node indices for each thread 
-    if ((g_Constants.FrustumCulling == 0 || IsVisible(node.minAndIsFull, node.max)) // frustum culling
-        && I < node.numChildren)                                                    // only draw valid voxels
+    if ((g_Constants.FrustumCulling == 0 || IsVisible(node.BasePosAndScale)) // frustum culling
+        && I < node.VoxelBufDataCount)                                       // only draw valid voxels
     {
-        DrawTask task = DrawTasks[GridIndices[node.childrenStartIndex + I]];
-        float3 pos = task.BasePosAndScale.xyz;
-        float scale = task.BasePosAndScale.w;
+        VoxelBufData voxel  = VoxelPositionBuffer[node.VoxelBufStartIndex + I];
+        float3 pos          = voxel.BasePosAndScale.xyz;
+        float scale         = voxel.BasePosAndScale.w;   // Voxel size is stored as width, not as extension in either direction of the axis
     
         // Atomically increase task count
         uint index = 0;

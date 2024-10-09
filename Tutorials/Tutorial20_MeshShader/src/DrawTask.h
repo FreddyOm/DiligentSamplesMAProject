@@ -1,16 +1,23 @@
 #pragma once
 
 #include <DirectXMath.h>
-#include <tuple>
+#include <BasicMath.hpp>
 
 namespace VoxelOC
 {
-    struct DrawTask
+    // GPU octree data
+    struct OctreeLeafNode     // OctreeLeafNode
     {
-        DirectX::XMFLOAT4 BasePosAndScale;
-        DirectX::XMFLOAT4 RandomValue;
+        DirectX::XMFLOAT4 BasePosAndScale;      // To compute node bounding box for frustum culling
+        DirectX::XMFLOAT4 RandomValue;          // Remove later
 
-        bool operator==(DrawTask& other)
+        // Payload
+        int VoxelBufStartIndex;
+        int VoxelBufIndexCount;
+
+        int Padding[2];
+
+        bool operator==(OctreeLeafNode& other)
         {
             return BasePosAndScale.x == other.BasePosAndScale.x
                 && BasePosAndScale.y == other.BasePosAndScale.y
@@ -18,16 +25,60 @@ namespace VoxelOC
         }
     };
 
+    // Draw task for depth pre pass
+    struct DepthPrepassDrawTask
+    {
+        DirectX::XMFLOAT4 BasePositionAndScale; // [x, y, z, scale]
+        int               BestOccluderCount;
+        int               Padding[3];
+
+        DepthPrepassDrawTask() = default;
+
+        DepthPrepassDrawTask(DepthPrepassDrawTask&& other) noexcept
+            :
+            BasePositionAndScale(other.BasePositionAndScale),
+            BestOccluderCount(other.BestOccluderCount)
+        { }
+    };
+
+    // Global voxel position data
     struct VoxelBufData
     {
         DirectX::XMFLOAT4 BasePosAndScale; // [ x, y, z, scale ]
     };
-
-    struct GPUOctreeNode
-    {
-        DirectX::XMFLOAT4 minAndIsFull{};
-        DirectX::XMFLOAT4 max{};
-        int               childrenStartIndex{};
-        int               numChildren{};
-    };
 }
+
+struct Vec4
+{
+    float x, y, z, w;
+    
+    Vec4() = default;
+
+    Vec4(Diligent::float4& other)
+    {
+        x = other.x;
+        y = other.y;
+        z = other.z;
+        w = other.w;
+    }
+
+    bool operator<(const Vec4& other) const
+    {
+        if (x != other.x)
+            return x < other.x;
+
+        if (y != other.y)
+            return y < other.y;
+
+        if (z != other.z)
+            return z < other.z;
+
+
+        return false;
+    }
+
+    bool operator==(const Vec4& other) const
+    {
+        return x == other.x && y == other.y && z == other.z && w == other.w;
+    }
+};

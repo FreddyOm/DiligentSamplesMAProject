@@ -1,10 +1,10 @@
 #include "octree.h"
 
-std::vector<VoxelOC::DrawTask> ObjectBuffer;
+std::vector<VoxelOC::OctreeLeafNode> ObjectBuffer;
 
 AABB GetObjectBounds(int index)
 {
-    VoxelOC::DrawTask task = ObjectBuffer.at(index);
+    VoxelOC::OctreeLeafNode task = ObjectBuffer.at(index);
 
     DirectX::XMVECTOR voxelSizeOffset = {task.BasePosAndScale.w, task.BasePosAndScale.w, task.BasePosAndScale.w};
 

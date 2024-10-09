@@ -55,11 +55,13 @@ namespace Diligent
         VCore::VectoriMap<VCore::Voxel> LoadVoxMesh(std::string meshPath);
         
         void CreateDrawTasksFromLoadedMesh();
+        void PopulateUnorderedVoxelPosBufAndCalcBounds(std::vector<Vec4>& UnsortedPositionBuffer, float& minMeshDimension, float& maxMeshDimension);
         void CreateDrawTasks();
         
-        void CreatePipelineState();        
-        void CreateSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& sortedNodeBuffer);
-        void CreateGPUOctreeNodeBuffer(std::vector<VoxelOC::GPUOctreeNode>& octreeNodeBuffer);
+        void CreatePipelineState();
+        void BindSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& sortedNodeBuffer);
+        void BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer);
+        void BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes);
         void CreateStatisticsBuffer();
         void CreateConstantsBuffer();
 
@@ -84,18 +86,15 @@ namespace Diligent
         static constexpr Int32 ASGroupSize = 32;
     
         Uint32                 m_DrawTaskCount = 0;
-        Uint32                 m_DrawTaskPadding = 0;
+        Uint32                 m_DepthPassDrawTaskCount = 0;
 
-        RefCntAutoPtr<IBuffer> m_pDrawTasks;
-        RefCntAutoPtr<IBuffer> m_pGridIndices;
-        RefCntAutoPtr<IBuffer> m_pOctreeNodes;
+        RefCntAutoPtr<IBuffer> m_pVoxelPosBuffer;
+        RefCntAutoPtr<IBuffer> m_pBestOccluderBuffer;
+        RefCntAutoPtr<IBuffer> m_pOctreeNodeBuffer;
         RefCntAutoPtr<IBuffer> m_pConstants;
         RefCntAutoPtr<ITexture>     m_pDepthBufferCpy;
         RefCntAutoPtr<ITextureView> m_pDepthBufferCpySRV;
         RefCntAutoPtr<ITextureView> m_pDepthBufferCpyUAV;
-
-        RefCntAutoPtr<ITexture>     m_pPrevDepthBuffer;
-        RefCntAutoPtr<ITextureView> m_pPrevDepthBufferSRV;  
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pSRB;
@@ -126,7 +125,7 @@ namespace Diligent
         Uint32      m_VisibleCubes   = 0;
         Uint32      m_VisibleOTNodes = 0;
     
-        OctreeNode<VoxelOC::DrawTask>* p_occlusionOctreeRoot = nullptr;
+        OctreeNode<VoxelOC::OctreeLeafNode>* p_occlusionOctreeRoot = nullptr;
     };
 
 } // namespace Diligent

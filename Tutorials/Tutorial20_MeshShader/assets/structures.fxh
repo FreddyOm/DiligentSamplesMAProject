@@ -3,10 +3,24 @@
 #endif
 
 // 32 bytes
-struct DrawTask
+struct OctreeLeafNode  // OctreeLeafNode
 {
-    float4 BasePosAndScale;     // [x, y, z, xyzScale]
+    float4 BasePosAndScale;     // [x, y, z, xyzScale]   To compute node bounding box for frustum culling 
     float4 RandomValue;         // [rand, alignedDrawTaskSize, drawTaskCountPadding, 0]
+    
+    // Payload
+    int VoxelBufStartIndex;
+    int VoxelBufDataCount;
+    
+    int2 Padding;
+};
+
+
+struct DepthPrepassDrawTask
+{
+    float4 BasePosAndScale; // [x, y, z, scale]
+    int BestOccluderCount;
+    int3 Padding;
 };
 
 struct VoxelBufData
@@ -29,15 +43,6 @@ struct Constants
     uint OcclusionCulling;      // 4
 
     uint3 Padding;              // 12
-};
-
-// 32 bytes
-struct GPUOctreeNode
-{
-    float4 minAndIsFull;        // [x, y, z, isFull]
-    float4 max;
-    int childrenStartIndex;
-    int numChildren;
 };
 
 // Payload size must be less than 16kb.

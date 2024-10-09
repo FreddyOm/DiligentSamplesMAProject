@@ -15,24 +15,19 @@ struct AABB
     {
         return {(min.x + max.x) / 2.f, (min.y + max.y) / 2.f, (min.z + max.z) / 2.f};
     }
+
+    DirectX::XMFLOAT4 CenterAndScale() const
+    {
+        // Center and scale     x                 y                   z                scale
+        return {(min.x + max.x) / 2.f, (min.y + max.y) / 2.f, (min.z + max.z) / 2.f, max.x - min.x};
+    }
 };
 
-extern std::vector<VoxelOC::DrawTask> ObjectBuffer;
+extern std::vector<VoxelOC::OctreeLeafNode> ObjectBuffer;
 
 bool          IntersectAABBAABB(const AABB& first, const AABB& second);
 bool          IntersectAABBPoint(const AABB& first, const DirectX::XMFLOAT3& second);
 extern AABB   GetObjectBounds(int index);
-
-struct DebugInfo
-{
-    size_t processedIndices = 0;
-    size_t acceptedIndices  = 0;
-    size_t skippedIndices   = 0;
-    size_t minIndex         = INT_MAX;
-    size_t maxIndex         = 0;
-    size_t minIndexSkipped  = INT_MAX;
-    size_t maxIndexSkipped  = 0;
-};
 
 template<typename T>
 class OctreeNode
@@ -61,34 +56,56 @@ public:
         }
     }
 
-    void GetAllGridIndices(std::vector<VoxelOC::VoxelBufData>& sortedVoxelDataBuf, std::vector<char>& duplicateBuffer, std::vector<VoxelOC::GPUOctreeNode>& octreeNodeBuffer)
+    void QueryAllNodes(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuf, std::vector<char>& duplicateBuffer, std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
     {
         // Check for children (Buttom Up)
         for (int i = 0; i < children.size(); ++i)
         {
-            //if (childOccupationMask & (0b00000001 << i))
             if (children[i] != nullptr)
-                children[i]->GetAllGridIndices(sortedVoxelDataBuf, duplicateBuffer, octreeNodeBuffer);
+            {                
+                children[i]->QueryAllNodes(orderedVoxelDataBuf, duplicateBuffer, octreeNodeBuffer);
+            }
         }
 
         // Create octree node data for gpu
-        VoxelOC::GPUOctreeNode ocNode;
-        ocNode.childrenStartIndex = static_cast<int>(sortedVoxelDataBuf.size());
-        ocNode.numChildren        = static_cast<int>(objectIndices.size());
-        ocNode.minAndIsFull       = DirectX::XMFLOAT4{bounds.min.x, bounds.min.y, bounds.min.z, objectIndices.size() >= maxObjectsPerLeaf ? 1.0f : 0.0f};
-        ocNode.max                = DirectX::XMFLOAT4{bounds.max.x, bounds.max.y, bounds.max.z, 0};
-
+        VoxelOC::OctreeLeafNode ocNode;
+        ocNode.VoxelBufStartIndex = static_cast<int>(orderedVoxelDataBuf.size());
+        ocNode.VoxelBufIndexCount = static_cast<int>(objectIndices.size());
+        
         // @TODO: Check if it can be adventageous to treat nodes in a tree fashion and collaps full nodes to a full parent node!
         if (objectIndices.size() > 0)       // Only insert nodes which actually store voxels. Makes it easier to iterate in depth pre-pass
             octreeNodeBuffer.push_back(std::move(ocNode));
 
-        // Add own indices if present
+        // Add own indices if this node has it's own indices
         for (int index = 0; index < objectIndices.size(); ++index)
         {
             if (duplicateBuffer[objectIndices[index]] == 0)
             {
-                sortedVoxelDataBuf.push_back(objectIndices[index]) ;
+                VoxelOC::VoxelBufData voxelData;
+                voxelData.BasePosAndScale = ObjectBuffer[objectIndices[index]].BasePosAndScale;
+
+                orderedVoxelDataBuf.push_back(std::move(voxelData));
                 duplicateBuffer[objectIndices[index]] = 1;
+            }
+        }
+    }
+
+    void QueryBestOccluders(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes)
+    {
+        // Fill depth prepass best occluders (Top Down)
+        for (int i = 0; i < children.size(); ++i)
+        {
+            if (children[i] != nullptr)
+            {
+                if (children[i]->IsFull())
+                {
+                    VoxelOC::DepthPrepassDrawTask drawTask{};
+                    drawTask.BasePositionAndScale = bounds.CenterAndScale();
+                    depthPrepassOTNodes.push_back(std::move(drawTask));
+                    continue;
+                }
+                
+                children[i]->QueryBestOccluders(depthPrepassOTNodes);
             }
         }
     }
@@ -146,6 +163,7 @@ public:
                 {
                     // Need to split this node
                     currentNode->SplitNode();
+
                     // Re-distribute existing objects
                     for (int index : currentNode->objectIndices)
                     {
@@ -183,5 +201,21 @@ public:
                 return;
             }
         }
+    }
+
+    bool IsFull()
+    {
+        // Node is either full when voxel count is maximum voxel count
+        if (objectIndices.size() >= maxObjectsPerLeaf)
+            return true;
+
+        // Or if all children are full
+        for (auto* child : children)
+        {
+            if (child == nullptr || !child->IsFull())
+                return false;
+        }
+        
+        return true;
     }
 };
