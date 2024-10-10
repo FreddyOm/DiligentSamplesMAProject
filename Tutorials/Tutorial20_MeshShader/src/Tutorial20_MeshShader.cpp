@@ -39,9 +39,6 @@
 #include <d3d12.h>
 #include "../../../../DiligentCore/Graphics/GraphicsEngineD3D12/include/d3dx12_win.h"
 
-#define VOXELIZER_IMPLEMENTATION
-#include "voxelizer.h"  // Voxelizer
-#include "ufbx/ufbx.h"  // FBX importer
 #include "svo_builder/octree_build.h"
 #include "octree/octree_converter.h"
 
@@ -171,146 +168,32 @@ namespace Diligent
         VERIFY_EXPR(m_CubeTextureSRV != nullptr);
     }
     
-     vx_point_cloud_t* p_voxelMesh = nullptr;
-     float      voxelSize   = 2.f;
-    
     Tutorial20_MeshShader::~Tutorial20_MeshShader()
     {
-        delete p_occlusionOctreeRoot;
-        // Delete voxelized meshes here!
-        vx_point_cloud_free(p_voxelMesh);
+        delete m_pOcclusionOctreeRoot;
     }
     
-    void Tutorial20_MeshShader::GetPointCloudFromMesh(std::string meshPath)
-    {
-        vx_mesh_t* p_triangleMesh = nullptr;
-    
-        //Load model from file
-        ufbx_load_opts opts = {0}; // Optional, pass NULL for defaults
-        ufbx_scene*    scene = ufbx_load_file(meshPath.c_str(), &opts, NULL);
-        
-        assert(scene);
-
-        ufbx_node* node = scene->nodes.data[0];
-    
-        int nVertices = static_cast<int>(node->children[0]->mesh->num_vertices);
-        int nIndices  = static_cast<int>(node->children[0]->mesh->num_indices);
-    
-        p_triangleMesh = vx_mesh_alloc(nVertices, nIndices);
-    
-        // Copy value by value (try memcpy later).
-        for (size_t i = 0; i < nVertices; ++i)
-        {
-            p_triangleMesh->vertices[i].x = (float)node->children[0]->mesh->vertices[i].x;
-            p_triangleMesh->vertices[i].y = (float)node->children[0]->mesh->vertices[i].y;
-            p_triangleMesh->vertices[i].z = (float)node->children[0]->mesh->vertices[i].z;
-        }
-    
-        for (size_t i = 0; i < nIndices; ++i)
-        {
-            p_triangleMesh->indices[i] = node->children[0]->mesh->vertex_indices[i];
-        }
-    
-        // Run voxelization
-        p_voxelMesh = vx_voxelize_pc(p_triangleMesh, voxelSize, voxelSize, voxelSize, 0.1f);
-    
-        // Free the triangle mesh and the scene
-        vx_mesh_free(p_triangleMesh);
-        ufbx_free_scene(scene);
-        // Do not vx_mesh_free(pVoxelMesh) yet. Do this in the deinitialization routine instead!
-    }
-
-    void Tutorial20_MeshShader::LoadSVO(std::string filePath)
-    {
-        Octree* model = NULL;
-        readOctree(filePath, model);
-
-        model->min = {0, 0, 0};
-        model->max = {100, 100, 100};
-
-        AABB octreeBounds{{model->min.x, model->min.y, model->min.z}, {model->max.x, model->max.y, model->max.z}};
-        DirectX::XMFLOAT3 rootCenter = octreeBounds.Center();
-
-        std::vector<Vec4>* pVoxelPosBuffer = new std::vector<Vec4>();
-        pVoxelPosBuffer->reserve(model->n_nodes);
-
-        p_occlusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(octreeBounds, OTVoxelBoundBuffer, model->gridlength, ASGroupSize);
-
-        OctreeConverter<VoxelOC::OctreeLeafNode> converter(model, octreeBounds, *pVoxelPosBuffer, p_occlusionOctreeRoot);
-        converter.Convert();
-
-        voxelSize = converter.GetVoxelSize();
-    }
-
-    void Tutorial20_MeshShader::CreateDrawTasksFromLoadedMesh()
+    void Tutorial20_MeshShader::CreateDrawTasksFromMesh(std::string meshPath)
     {    
         // Draw Tasks
-        std::vector<Vec4> unorderedPositionBuffer;
-       
-        float minMeshDimension = 10000.f;
-        float maxMeshDimension = -10000.f;
+        std::vector<Vec4>* pUnorderedPositionBuffer = new std::vector<Vec4>();
 
-        PopulateUnorderedVoxelPosBufAndCalcBounds(unorderedPositionBuffer, minMeshDimension, maxMeshDimension);
+        PopulateUnorderedVoxelPosBufAndCalcBounds(meshPath, *pUnorderedPositionBuffer);
 
-        VERIFY_EXPR(unorderedPositionBuffer.size() > 0);
-        VERIFY_EXPR(minMeshDimension < maxMeshDimension);
+        VERIFY_EXPR(pUnorderedPositionBuffer->size() > 0);
 
-        //Octree
-        AABB world = 
-        {
-            {minMeshDimension, minMeshDimension, minMeshDimension}, 
-            {maxMeshDimension, maxMeshDimension, maxMeshDimension}
-        };
-        const DirectX::XMVECTOR voxelSizeOffset = {voxelSize, voxelSize, voxelSize};
-
-        p_occlusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(world, OTVoxelBoundBuffer, 256, ASGroupSize);
-    
-        {
-            // Copy draw tasks to global object buffer for AABB calculations
-            for (int i = 0; i < p_voxelMesh->nvertices; ++i)
-            {
-                VoxelOC::OctreeLeafNode task{};
-
-                task.BasePosAndScale.x = unorderedPositionBuffer[i].x;
-                task.BasePosAndScale.y = unorderedPositionBuffer[i].y;
-                task.BasePosAndScale.z = unorderedPositionBuffer[i].z;
-                task.BasePosAndScale.w = unorderedPositionBuffer[i].w;
-
-                OTVoxelBoundBuffer.push_back(std::move(task));
-            }
-
-            // Calculate bounds and add them to octree
-            for (int i = 0; i < p_voxelMesh->nvertices; ++i)
-            {
-                // Calculate bounds
-                DirectX::XMVECTOR minBoundVec = DirectX::XMVectorSubtract(
-                    {unorderedPositionBuffer[i].x,
-                     unorderedPositionBuffer[i].y,
-                     unorderedPositionBuffer[i].z},
-                    voxelSizeOffset);
-                DirectX::XMVECTOR maxBoundVec = DirectX::XMVectorAdd(
-                    {unorderedPositionBuffer[i].x,
-                     unorderedPositionBuffer[i].y,
-                     unorderedPositionBuffer[i].z},
-                    voxelSizeOffset);
-
-                DirectX::XMFLOAT3 minBound;
-                DirectX::XMFLOAT3 maxBound;
-
-                DirectX::XMStoreFloat3(&minBound, minBoundVec);
-                DirectX::XMStoreFloat3(&maxBound, maxBoundVec);
-
-                p_occlusionOctreeRoot->InsertObject(i, {minBound, maxBound});
-            }
-        }        
+        VERIFY_EXPR(m_pOcclusionOctreeRoot != nullptr);
+        VERIFY_EXPR(m_pOcclusionOctreeRoot->gridSize > 0);
+        VERIFY_EXPR(m_pOcclusionOctreeRoot->nodeBuffer.size() > 0);
+  
         
         // Buffer where objects in one node are stored contigously (start index + length)
         std::vector<VoxelOC::VoxelBufData>  orderedVoxelDataBuffer{};
-        orderedVoxelDataBuffer.reserve(unorderedPositionBuffer.size());
+        orderedVoxelDataBuffer.reserve(pUnorderedPositionBuffer->size());
         
         // Buffer for all octree nodes which include at least one voxel
         std::vector<VoxelOC::OctreeLeafNode> OTLeafNodes{};
-        OTLeafNodes.reserve(static_cast<int>(unorderedPositionBuffer.size() / 2.0f));
+        OTLeafNodes.reserve(static_cast<int>(pUnorderedPositionBuffer->size() / 2.0f));
 
         // Buffer for full octree nodes which represent best occluders
         std::vector<VoxelOC::DepthPrepassDrawTask> depthPrepassOTNodes;
@@ -318,21 +201,22 @@ namespace Diligent
         
         {
             // Buffer to avoid duplicate entries of voxels into the ordered voxel data buffer
-            std::vector<char> duplicateBuffer(unorderedPositionBuffer.size(), 0);   // Can be discarded after QueryAllNodes
+            std::vector<char> duplicateBuffer(pUnorderedPositionBuffer->size(), 0);   // Can be discarded after QueryAllNodes
 
             // Visist all nodes and fill the given buffers with data
-            p_occlusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, duplicateBuffer, OTLeafNodes);
+            m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, duplicateBuffer, OTLeafNodes);
             VERIFY_EXPR(orderedVoxelDataBuffer.size() > 0 && OTLeafNodes.size() > 0);
 
             // Visit all nodes and search for "full" nodes
-            p_occlusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
+            m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
             VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Might be valid to be 0, though
         }
         
         // Temporary buffer for octree insertion - can now be cleared (but was formerly used in QueryAllNodes()!)
         OTVoxelBoundBuffer.clear();
-        unorderedPositionBuffer.clear(); // Discard unordered position buffer here, so we don't accidentially use it!
-        
+        pUnorderedPositionBuffer->clear(); // Discard unordered position buffer here, so we don't accidentially use it!
+        delete pUnorderedPositionBuffer;
+
         // Assign some more (debug) data to the draw tasks (= octree leaf nodes)
         FastRandReal<float> Rnd{0, 0.f, 1.f};
 
@@ -361,32 +245,22 @@ namespace Diligent
         VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
     }
 
-    void Tutorial20_MeshShader::PopulateUnorderedVoxelPosBufAndCalcBounds(std::vector<Vec4>& UnsortedPositionBuffer, float& minMeshDimension, float& maxMeshDimension)
+    void Tutorial20_MeshShader::PopulateUnorderedVoxelPosBufAndCalcBounds(std::string OTmodelPath, std::vector<Vec4>& UnsortedPositionBuffer)
     {
-        // Add some spatial padding to explicitly include every voxel!
-        minMeshDimension -= voxelSize * 2.f;
-        maxMeshDimension += voxelSize * 2.f; 
+        Octree* model = NULL;
+        readOctree(OTmodelPath, model);
 
-        UnsortedPositionBuffer.resize(p_voxelMesh->nvertices);
+        model->min = {0, 0, 0};
+        model->max = {100, 100, 100};
 
-        // Populate unordered voxel position buffer
-        for (int i = 0; i < p_voxelMesh->nvertices; ++i)
-        {
-            Vec4& dst = UnsortedPositionBuffer[i];
+        AABB              octreeBounds{{model->min.x, model->min.y, model->min.z}, {model->max.x, model->max.y, model->max.z}};
 
-            dst.x = p_voxelMesh->vertices[i].x;
-            dst.y = p_voxelMesh->vertices[i].y;
-            dst.z = p_voxelMesh->vertices[i].z;
-            dst.w = voxelSize / 2.f; // 0.5 .. 1 -> divide by 2 for size from middle point
+        UnsortedPositionBuffer.reserve(model->n_nodes);
 
-            minMeshDimension = (std::min)(dst.x, minMeshDimension);
-            minMeshDimension = (std::min)(dst.y, minMeshDimension);
-            minMeshDimension = (std::min)(dst.z, minMeshDimension);
+        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(octreeBounds, OTVoxelBoundBuffer, model->gridlength, ASGroupSize);
 
-            maxMeshDimension = (std::max)(dst.x, maxMeshDimension);
-            maxMeshDimension = (std::max)(dst.y, maxMeshDimension);
-            maxMeshDimension = (std::max)(dst.z, maxMeshDimension);
-        }
+        OctreeConverter<VoxelOC::OctreeLeafNode> converter(model, octreeBounds, UnsortedPositionBuffer, m_pOcclusionOctreeRoot);
+        converter.Convert();
     }
 
     void Tutorial20_MeshShader::BindSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuffer)
@@ -786,13 +660,11 @@ namespace Diligent
     {
         SampleBase::Initialize(InitInfo);
     
-        fpc.SetMoveSpeed(25.f);
+        fpc.SetMoveSpeed(30.f);
     
         LoadTexture();
-        GetPointCloudFromMesh("models/suzanne.fbx");
-        LoadSVO("models/octree/suzanne.octree");
         //CreateDrawTasks();
-        CreateDrawTasksFromLoadedMesh();
+        CreateDrawTasksFromMesh("models/octree/suzanne.octree");
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
         CreateDepthBuffers();

@@ -8,6 +8,9 @@
 #include "octree.h"
 #include "../svo_builder/Octree.h"
 
+#include <mutex>
+#include <thread>
+
 struct StackItem
 {
     Node* node;
@@ -66,9 +69,8 @@ private:
             }
             else
             {
-                // Push children onto the stack
                 for (int i = 7; i >= 0; --i)
-                { // Reverse order for depth-first
+                {
                     if (sourceNode->hasChild(i))
                     {
                         Node* childNode   = &sourceOctree->nodes.at(sourceNode->getChildPos(i));
@@ -100,20 +102,6 @@ public:
         VERIFY_EXPR(rootBounds.max.x - rootBounds.max.y < 0.1f && rootBounds.max.y - rootBounds.max.z < 0.1f);
         VERIFY_EXPR(rootBounds.min.x - rootBounds.min.y < 0.1f && rootBounds.min.y - rootBounds.min.z < 0.1f);
 
-        return (rootBounds.max.x - rootBounds.min.x) / (float)sourceOctree->gridlength;
+        return (rootBounds.max.x - rootBounds.min.x) / (float)(sourceOctree->gridlength * 2.0f) ;
     }
 };
-
-//// Main conversion function
-//void ConvertOctree(Octree* model, OctreeNode* p_occlusionOctreeRoot)
-//{
-//    AABB              octreeBounds{{model->min.x, model->min.y, model->min.z},
-//                                   {model->max.x, model->max.y, model->max.z}};
-//    DirectX::XMFLOAT3 rootCenter = octreeBounds.Center();
-//
-//    std::vector<Vec4> voxelPosBuffer;
-//    voxelPosBuffer.reserve(model->n_nodes);
-//
-//    OctreeConverter<T> converter(model, octreeBounds, voxelPosBuffer, p_occlusionOctreeRoot);
-//    converter.Convert();
-//}

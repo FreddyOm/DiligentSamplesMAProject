@@ -49,11 +49,8 @@ namespace Diligent
         ~Tutorial20_MeshShader();
     
     private:
-        void GetPointCloudFromMesh(std::string meshPath);
-        void LoadSVO(std::string filePath);
-        
-        void CreateDrawTasksFromLoadedMesh();
-        void PopulateUnorderedVoxelPosBufAndCalcBounds(std::vector<Vec4>& UnsortedPositionBuffer, float& minMeshDimension, float& maxMeshDimension);
+        void CreateDrawTasksFromMesh(std::string meshPath);
+        void PopulateUnorderedVoxelPosBufAndCalcBounds(std::string OTmodelPath, std::vector<Vec4>& UnsortedPositionBuffer);
         void CreateDrawTasks();
         
         void CreatePipelineState();
@@ -123,7 +120,7 @@ namespace Diligent
         Uint32      m_VisibleCubes   = 0;
         Uint32      m_VisibleOTNodes = 0;
     
-        OctreeNode<VoxelOC::OctreeLeafNode>* p_occlusionOctreeRoot = nullptr;
+        OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;
     };
 
 } // namespace Diligent
