@@ -41,8 +41,11 @@
 
 #define VOXELIZER_IMPLEMENTATION
 #include "voxelizer.h"  // Voxelizer
-
 #include "ufbx/ufbx.h"  // FBX importer
+#include "svo_builder/octree_build.h"
+#include "octree/octree_converter.h"
+
+extern std::vector<VoxelOC::OctreeLeafNode> OTVoxelBoundBuffer;
 
 namespace Diligent
 {
@@ -217,6 +220,28 @@ namespace Diligent
         // Do not vx_mesh_free(pVoxelMesh) yet. Do this in the deinitialization routine instead!
     }
 
+    void Tutorial20_MeshShader::LoadSVO(std::string filePath)
+    {
+        Octree* model = NULL;
+        readOctree(filePath, model);
+
+        model->min = {0, 0, 0};
+        model->max = {100, 100, 100};
+
+        AABB octreeBounds{{model->min.x, model->min.y, model->min.z}, {model->max.x, model->max.y, model->max.z}};
+        DirectX::XMFLOAT3 rootCenter = octreeBounds.Center();
+
+        std::vector<Vec4>* pVoxelPosBuffer = new std::vector<Vec4>();
+        pVoxelPosBuffer->reserve(model->n_nodes);
+
+        p_occlusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(octreeBounds, OTVoxelBoundBuffer, model->gridlength, ASGroupSize);
+
+        OctreeConverter<VoxelOC::OctreeLeafNode> converter(model, octreeBounds, *pVoxelPosBuffer, p_occlusionOctreeRoot);
+        converter.Convert();
+
+        voxelSize = converter.GetVoxelSize();
+    }
+
     void Tutorial20_MeshShader::CreateDrawTasksFromLoadedMesh()
     {    
         // Draw Tasks
@@ -238,7 +263,7 @@ namespace Diligent
         };
         const DirectX::XMVECTOR voxelSizeOffset = {voxelSize, voxelSize, voxelSize};
 
-        p_occlusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(world, ASGroupSize);
+        p_occlusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(world, OTVoxelBoundBuffer, 256, ASGroupSize);
     
         {
             // Copy draw tasks to global object buffer for AABB calculations
@@ -251,7 +276,7 @@ namespace Diligent
                 task.BasePosAndScale.z = unorderedPositionBuffer[i].z;
                 task.BasePosAndScale.w = unorderedPositionBuffer[i].w;
 
-                ObjectBuffer.push_back(task);
+                OTVoxelBoundBuffer.push_back(std::move(task));
             }
 
             // Calculate bounds and add them to octree
@@ -305,7 +330,7 @@ namespace Diligent
         }
         
         // Temporary buffer for octree insertion - can now be cleared (but was formerly used in QueryAllNodes()!)
-        ObjectBuffer.clear();
+        OTVoxelBoundBuffer.clear();
         unorderedPositionBuffer.clear(); // Discard unordered position buffer here, so we don't accidentially use it!
         
         // Assign some more (debug) data to the draw tasks (= octree leaf nodes)
@@ -765,6 +790,7 @@ namespace Diligent
     
         LoadTexture();
         GetPointCloudFromMesh("models/suzanne.fbx");
+        LoadSVO("models/octree/suzanne.octree");
         //CreateDrawTasks();
         CreateDrawTasksFromLoadedMesh();
         CreateStatisticsBuffer();

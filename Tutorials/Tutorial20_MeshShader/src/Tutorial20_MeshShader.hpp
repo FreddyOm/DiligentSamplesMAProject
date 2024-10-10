@@ -50,6 +50,7 @@ namespace Diligent
     
     private:
         void GetPointCloudFromMesh(std::string meshPath);
+        void LoadSVO(std::string filePath);
         
         void CreateDrawTasksFromLoadedMesh();
         void PopulateUnorderedVoxelPosBufAndCalcBounds(std::vector<Vec4>& UnsortedPositionBuffer, float& minMeshDimension, float& maxMeshDimension);

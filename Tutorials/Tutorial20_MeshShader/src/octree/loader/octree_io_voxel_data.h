@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/glm.hpp>
 #include <stdint.h>
 
 // This struct defines VoxelData for our voxelizer.
@@ -7,8 +8,13 @@
 struct VoxelData{
 	uint64_t morton;
 	
-	VoxelData() : morton(0) {}
-	VoxelData(uint64_t morton) : morton(morton) {}
+	glm::vec3 color;
+    glm::vec3 normal;
+
+	VoxelData() :
+        morton(0), normal(glm::vec3()), color(glm::vec3()) {}
+    VoxelData(::uint_fast64_t morton, glm::vec3 normal, glm::vec3 color) :
+        morton(morton), normal(normal), color(color) {}
 
 	bool operator >(VoxelData &a){
 		return morton > a.morton;

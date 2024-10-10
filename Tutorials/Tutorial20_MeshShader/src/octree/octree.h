@@ -5,45 +5,35 @@
 #include <vector>
 #include <set>
 #include "../DrawTask.h"
+#include "aabb.h"
 
-struct AABB
-{
-    DirectX::XMFLOAT3 min = {};
-    DirectX::XMFLOAT3 max = {};
-
-    DirectX::XMFLOAT3 Center() const
-    {
-        return {(min.x + max.x) / 2.f, (min.y + max.y) / 2.f, (min.z + max.z) / 2.f};
-    }
-
-    DirectX::XMFLOAT4 CenterAndScale() const
-    {
-        // Center and scale     x                 y                   z                scale
-        return {(min.x + max.x) / 2.f, (min.y + max.y) / 2.f, (min.z + max.z) / 2.f, max.x - min.x};
-    }
-};
-
-extern std::vector<VoxelOC::OctreeLeafNode> ObjectBuffer;
+extern std::vector<VoxelOC::OctreeLeafNode> OTVoxelBoundBuffer;
 
 bool          IntersectAABBAABB(const AABB& first, const AABB& second);
 bool          IntersectAABBPoint(const AABB& first, const DirectX::XMFLOAT3& second);
-extern AABB   GetObjectBounds(int index);
+extern AABB   GetVoxelBounds(size_t index);
 
 template<typename T>
 class OctreeNode
 {
 public:
     AABB                       bounds                = {};
-    std::array<OctreeNode*, 8> children              = {};
-    std::vector<int>           objectIndices         = {};
-    bool                       isLeaf                = {};
     unsigned int               maxObjectsPerLeaf     = 0;
+    bool                       isLeaf                = {};
 
-    OctreeNode(const AABB& bounds,  unsigned int maxObjectsPerLeaf = 64) :
-        bounds(bounds), isLeaf(true), maxObjectsPerLeaf(maxObjectsPerLeaf)
+    size_t gridSize = 0;
+
+    std::vector<VoxelOC::OctreeLeafNode>& nodeBuffer;
+    std::array<OctreeNode*, 8> children              = {};
+    std::vector<size_t>        objectIndices         = {};
+
+    OctreeNode(const AABB& bounds, std::vector<VoxelOC::OctreeLeafNode>& nodeBuffer, size_t gridSize, unsigned int maxObjectsPerLeaf = 64) :
+        bounds(bounds), maxObjectsPerLeaf(maxObjectsPerLeaf), isLeaf(true), nodeBuffer(nodeBuffer), gridSize(gridSize)
     {
         children.fill(nullptr);
         objectIndices.reserve(maxObjectsPerLeaf);
+
+        VERIFY_EXPR(gridSize > 0);
     }
 
     ~OctreeNode()
@@ -83,7 +73,7 @@ public:
             if (duplicateBuffer[objectIndices[index]] == 0)
             {
                 VoxelOC::VoxelBufData voxelData;
-                voxelData.BasePosAndScale = ObjectBuffer[objectIndices[index]].BasePosAndScale;
+                voxelData.BasePosAndScale = OTVoxelBoundBuffer[objectIndices[index]].BasePosAndScale;
 
                 orderedVoxelDataBuf.push_back(std::move(voxelData));
                 duplicateBuffer[objectIndices[index]] = 1;
@@ -133,13 +123,13 @@ public:
             newMax.y = (i & 2) ? bounds.max.y : center.y;
             newMax.z = (i & 4) ? bounds.max.z : center.z;
 
-            children[i] = new OctreeNode({newMin, newMax}, maxObjectsPerLeaf);
+            children[i] = new OctreeNode({newMin, newMax}, nodeBuffer, gridSize, maxObjectsPerLeaf);
         }
 
         isLeaf = false;
     }
 
-    void InsertObject(int objectIndex, const AABB objectBounds)
+    void InsertObject(size_t objectIndex, const AABB objectBounds)
     {
         OctreeNode*              currentNode = this;
         std::vector<OctreeNode*> path;
@@ -166,9 +156,9 @@ public:
                     currentNode->SplitNode();
 
                     // Re-distribute existing objects
-                    for (int index : currentNode->objectIndices)
+                    for (size_t index : currentNode->objectIndices)
                     {
-                        AABB existingBounds = GetObjectBounds(index);
+                        AABB existingBounds = GetVoxelBounds(index);
                         for (auto& child : currentNode->children)
                         {
                             if (IntersectAABBPoint(child->bounds, existingBounds.Center()))
