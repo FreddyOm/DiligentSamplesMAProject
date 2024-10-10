@@ -51,6 +51,9 @@ set(ASSETS
     assets/DGLogo.png
     assets/models/suzanne.fbx
     assets/models/sponza.fbx
+    assets/models/octree/suzanne.octree
+    assets/models/octree/suzanne.octreenodes
+    assets/models/octree/suzanne.octreedata
 )
 
 add_sample_app("Tutorial20_MeshShader" "DiligentSamples/Tutorials" "${SOURCE}" "${INCLUDE}" "${SHADERS}" "${ASSETS}")
