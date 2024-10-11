@@ -50,7 +50,7 @@ namespace Diligent
     
     private:
         void CreateDrawTasksFromMesh(std::string meshPath);
-        void PopulateUnorderedVoxelPosBufAndCalcBounds(std::string OTmodelPath, std::vector<Vec4>& UnsortedPositionBuffer);
+        void PopulateOctree(std::string OTmodelPath);
         void CreateDrawTasks();
         
         void CreatePipelineState();
@@ -78,7 +78,7 @@ namespace Diligent
         Uint64                 m_FrameId               = 1; // Can't signal 0
         const Uint32           m_StatisticsHistorySize = 8;
     
-        static constexpr Int32 ASGroupSize = 64;
+        static constexpr Int32 ASGroupSize = 64;        // 1024
     
         Uint32                 m_DrawTaskCount = 0;
         Uint32                 m_DepthPassDrawTaskCount = 0;
@@ -110,7 +110,7 @@ namespace Diligent
         bool        m_MSDebugViz     = false;
         bool        m_OTDebugViz     = false;
         bool        m_FrustumCulling = true;
-        bool        m_OcclusionCulling = true;
+        bool        m_ShowOnlyBestOccluders = false;
         bool        m_SyncCamPosition  = true;
         const float m_FOV            = PI_F / 4.0f;
         const float m_CoTanHalfFov   = 1.0f / std::tan(m_FOV * 0.5f);

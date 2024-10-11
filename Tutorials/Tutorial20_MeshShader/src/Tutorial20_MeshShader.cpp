@@ -39,8 +39,7 @@
 #include <d3d12.h>
 #include "../../../../DiligentCore/Graphics/GraphicsEngineD3D12/include/d3dx12_win.h"
 
-#include "svo_builder/octree_build.h"
-#include "octree/octree_converter.h"
+#include "binvox/binvox_loader.h"
 
 extern std::vector<VoxelOC::OctreeLeafNode> OTVoxelBoundBuffer;
 
@@ -175,25 +174,19 @@ namespace Diligent
     
     void Tutorial20_MeshShader::CreateDrawTasksFromMesh(std::string meshPath)
     {    
-        // Draw Tasks
-        std::vector<Vec4>* pUnorderedPositionBuffer = new std::vector<Vec4>();
-
-        PopulateUnorderedVoxelPosBufAndCalcBounds(meshPath, *pUnorderedPositionBuffer);
-
-        VERIFY_EXPR(pUnorderedPositionBuffer->size() > 0);
+        PopulateOctree(meshPath);
 
         VERIFY_EXPR(m_pOcclusionOctreeRoot != nullptr);
         VERIFY_EXPR(m_pOcclusionOctreeRoot->gridSize > 0);
         VERIFY_EXPR(m_pOcclusionOctreeRoot->nodeBuffer.size() > 0);
-  
         
         // Buffer where objects in one node are stored contigously (start index + length)
         std::vector<VoxelOC::VoxelBufData>  orderedVoxelDataBuffer{};
-        orderedVoxelDataBuffer.reserve(pUnorderedPositionBuffer->size());
+        orderedVoxelDataBuffer.reserve(OTVoxelBoundBuffer.size());
         
         // Buffer for all octree nodes which include at least one voxel
         std::vector<VoxelOC::OctreeLeafNode> OTLeafNodes{};
-        OTLeafNodes.reserve(static_cast<int>(pUnorderedPositionBuffer->size() / 2.0f));
+        OTLeafNodes.reserve(static_cast<int>(OTVoxelBoundBuffer.size() / 2.0f));
 
         // Buffer for full octree nodes which represent best occluders
         std::vector<VoxelOC::DepthPrepassDrawTask> depthPrepassOTNodes;
@@ -201,7 +194,7 @@ namespace Diligent
         
         {
             // Buffer to avoid duplicate entries of voxels into the ordered voxel data buffer
-            std::vector<char> duplicateBuffer(pUnorderedPositionBuffer->size(), 0);   // Can be discarded after QueryAllNodes
+            std::vector<char> duplicateBuffer(OTVoxelBoundBuffer.size(), 0); // Can be discarded after QueryAllNodes
 
             // Visist all nodes and fill the given buffers with data
             m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, duplicateBuffer, OTLeafNodes);
@@ -214,9 +207,6 @@ namespace Diligent
         
         // Temporary buffer for octree insertion - can now be cleared (but was formerly used in QueryAllNodes()!)
         OTVoxelBoundBuffer.clear();
-        pUnorderedPositionBuffer->clear(); // Discard unordered position buffer here, so we don't accidentially use it!
-        delete pUnorderedPositionBuffer;
-
         // Assign some more (debug) data to the draw tasks (= octree leaf nodes)
         FastRandReal<float> Rnd{0, 0.f, 1.f};
 
@@ -245,22 +235,37 @@ namespace Diligent
         VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
     }
 
-    void Tutorial20_MeshShader::PopulateUnorderedVoxelPosBufAndCalcBounds(std::string OTmodelPath, std::vector<Vec4>& UnsortedPositionBuffer)
+    void Tutorial20_MeshShader::PopulateOctree(std::string OTmodelPath)
     {
-        Octree* model = NULL;
-        readOctree(OTmodelPath, model);
+        BinvoxData data = read_binvox(OTmodelPath);
 
-        model->min = {0, 0, 0};
-        model->max = {100, 100, 100};
+        AABB worldBounds       = {{0, 0, 0}, {(float)data.width, (float)data.height, (float)data.depth}};
+        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds);
 
-        AABB              octreeBounds{{model->min.x, model->min.y, model->min.z}, {model->max.x, model->max.y, model->max.z}};
+        for (int z = 0; z < data.depth; ++z)
+        {
+            for (int y = 0; y < data.height; ++y)
+            {
+                for (int x = 0; x < data.width; ++x)
+                {
+                    size_t index = get_index(x, y, z, data);
+                    if (data.voxels[index] > 0)
+                    {
+                        AABB                    bounds = {{x - 0.5f, y - 0.5f, z - 0.5f}, {x + 0.5f, y + 0.5f, z + 0.5f}};
+                        VoxelOC::OctreeLeafNode node;
 
-        UnsortedPositionBuffer.reserve(model->n_nodes);
+                        node.BasePosAndScale.x = bounds.CenterAndScale().x;
+                        node.BasePosAndScale.y = bounds.CenterAndScale().y;
+                        node.BasePosAndScale.z = bounds.CenterAndScale().z;
+                        node.BasePosAndScale.w = bounds.CenterAndScale().w / 2.0f;
 
-        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(octreeBounds, OTVoxelBoundBuffer, model->gridlength, ASGroupSize);
-
-        OctreeConverter<VoxelOC::OctreeLeafNode> converter(model, octreeBounds, UnsortedPositionBuffer, m_pOcclusionOctreeRoot);
-        converter.Convert();
+                        OTVoxelBoundBuffer.push_back(std::move(node));
+                        
+                        m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, bounds);
+                    }
+                }
+            }
+        }
     }
 
     void Tutorial20_MeshShader::BindSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuffer)
@@ -628,7 +633,7 @@ namespace Diligent
         if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::Checkbox("Frustum culling", &m_FrustumCulling);
-            ImGui::Checkbox("Occlusion culling", &m_OcclusionCulling);
+            ImGui::Checkbox("Show best occluders only", &m_ShowOnlyBestOccluders);
             ImGui::Checkbox("MS Debug Visualization", &m_MSDebugViz);
             ImGui::Checkbox("Octree Debug Visualization", &m_OTDebugViz);
             ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
@@ -664,7 +669,7 @@ namespace Diligent
     
         LoadTexture();
         //CreateDrawTasks();
-        CreateDrawTasksFromMesh("models/octree/suzanne.octree");
+        CreateDrawTasksFromMesh("models/suzanne.binvox");
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
         CreateDepthBuffers();
@@ -696,7 +701,7 @@ namespace Diligent
             CBConstants->ViewProjMat            = m_ViewProjMatrix.Transpose();
             CBConstants->CoTanHalfFov           = m_LodScale * m_CoTanHalfFov;
             CBConstants->FrustumCulling         = m_FrustumCulling ? 1 : 0;
-            CBConstants->OcclusionCulling       = m_OcclusionCulling ? 1 : 0;
+            CBConstants->ShowOnlyBestOccluders  = m_ShowOnlyBestOccluders ? 1 : 0;
             CBConstants->MSDebugViz             = m_MSDebugViz ? 1.0f : 0.0f;
             CBConstants->OctreeDebugViz         = m_OTDebugViz ? 1.0f : 0.0f;
     

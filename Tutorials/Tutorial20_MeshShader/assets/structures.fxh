@@ -1,5 +1,5 @@
 #ifndef GROUP_SIZE
-#define GROUP_SIZE 64
+#define GROUP_SIZE 64   // 1024
 #endif
 
 // 32 bytes
@@ -39,7 +39,7 @@ struct Constants
     float OctreeDebugViz;       // 4
     uint FrustumCulling;        // 4    // @TODO: Change this to single bits in one uint
     
-    uint OcclusionCulling;      // 4
+    uint ShowOnlyBestOccluders; // 4
 
     uint3 Padding;              // 12
 };

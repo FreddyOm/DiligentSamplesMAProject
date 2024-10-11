@@ -21,14 +21,15 @@ public:
     unsigned int               maxObjectsPerLeaf     = 0;
     bool                       isLeaf                = {};
 
+    AABB   rootBounds = {};
     size_t gridSize = 0;
 
     std::vector<VoxelOC::OctreeLeafNode>& nodeBuffer;
     std::array<OctreeNode*, 8> children              = {};
     std::vector<size_t>        objectIndices         = {};
 
-    OctreeNode(const AABB& bounds, std::vector<VoxelOC::OctreeLeafNode>& nodeBuffer, size_t gridSize, unsigned int maxObjectsPerLeaf = 64) :
-        bounds(bounds), maxObjectsPerLeaf(maxObjectsPerLeaf), isLeaf(true), nodeBuffer(nodeBuffer), gridSize(gridSize)
+    OctreeNode(const AABB& bounds, std::vector<VoxelOC::OctreeLeafNode>& nodeBuffer, size_t gridSize, AABB rootBounds, unsigned int maxObjectsPerLeaf = 64) :
+        bounds(bounds), maxObjectsPerLeaf(maxObjectsPerLeaf), isLeaf(true), nodeBuffer(nodeBuffer), gridSize(gridSize), rootBounds(rootBounds)
     {
         children.fill(nullptr);
         objectIndices.reserve(maxObjectsPerLeaf);
@@ -123,7 +124,7 @@ public:
             newMax.y = (i & 2) ? bounds.max.y : center.y;
             newMax.z = (i & 4) ? bounds.max.z : center.z;
 
-            children[i] = new OctreeNode({newMin, newMax}, nodeBuffer, gridSize, maxObjectsPerLeaf);
+            children[i] = new OctreeNode({newMin, newMax}, nodeBuffer, gridSize, rootBounds, maxObjectsPerLeaf);
         }
 
         isLeaf = false;
@@ -194,9 +195,45 @@ public:
         }
     }
 
+    float GetVoxelSize() const
+    {
+        VERIFY_EXPR(rootBounds.max.x - rootBounds.max.y < 0.1f && rootBounds.max.y - rootBounds.max.z < 0.1f);
+        VERIFY_EXPR(rootBounds.min.x - rootBounds.min.y < 0.1f && rootBounds.min.y - rootBounds.min.z < 0.1f);
+
+        return (rootBounds.max.x - rootBounds.min.x) / (float)(gridSize * 2.0f);
+    }
+
+    /*
+     
+        For MaxObjectsPerLeaf = 4 :
+     
+        Tight and Full:                 Not Tight but Full:
+        --------------                  -----------------------------
+        | ----  ---- |                  | ----  ----                |
+        | |  |  |  | |                  | |  |  |  |                |
+        | ----  ---- |                  | ----  ----                |
+        | ----  ---- |                  | ----  ----                |
+        | |  |  |  | |                  | |  |  |  |                |
+        | ----  ---- |                  | ----  ----                |
+        --------------                  |                           |
+                                        |                           |
+                                        |                           |
+                                        |                           |
+                                        -----------------------------
+    */
+
+    // A tight node is a leaf node which is not bigger than the boundaries of the individual voxels summed! 
+    bool IsTight()
+    {
+        float boundDimension = (bounds.max.x - bounds.min.x);
+        float overfullVoxelDimension = GetVoxelSize() * 2 * 5; 
+
+        return boundDimension < overfullVoxelDimension;
+    }
+
     bool IsFull()
     {
-        // Node is either full when voxel count is maximum voxel count
+        // Node is either full when voxel count is maximum voxel count and node is tight
         if (objectIndices.size() >= maxObjectsPerLeaf)
             return true;
 

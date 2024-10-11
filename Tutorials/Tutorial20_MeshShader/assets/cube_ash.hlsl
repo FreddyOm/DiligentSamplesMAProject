@@ -24,7 +24,7 @@ groupshared Payload s_Payload;
 bool IsVisible(float4 basePosAndScale)
 {
     float4 center = float4(basePosAndScale.xyz, 1.0f);
-    float radius = 0.71f * abs(basePosAndScale.z * 0.5);   // => diagonal (center-max point) = sqrt(2) * half_width / 2.0f | => 1/2 sqrt(2) * half_width
+    float radius = 0.71f * abs(basePosAndScale.z);   // => diagonal (center-max point) = sqrt(2) * half_width / 4.0f | => 1/2 sqrt(2) * half_width
     
     for (int i = 0; i < 6; ++i)
     {
@@ -68,7 +68,7 @@ void main(in uint I  : SV_GroupIndex,
     
     // Access node indices for each thread 
     if ((g_Constants.FrustumCulling == 0 || IsVisible(node.BasePosAndScale)) // frustum culling
-        && I < node.VoxelBufDataCount)                                       // only draw valid voxels
+        && I < node.VoxelBufDataCount && (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount == 64))                                       // only draw valid voxels
     {
         VoxelBufData voxel  = VoxelPositionBuffer[node.VoxelBufStartIndex + I];
         float3 pos          = voxel.BasePosAndScale.xyz;

@@ -18,7 +18,7 @@ groupshared Payload s_Payload;
 bool IsVisible(float4 basePosAndScale)
 {
     float4 center = float4(basePosAndScale.xyz, 1.0f);
-    float radius = 0.71f * abs(basePosAndScale.z * 0.5); // => diagonal (center-max point) = sqrt(2) * half_width / 2.0f | => 1/2 sqrt(2) * half_width
+    float radius = 0.8f * abs(basePosAndScale.z); // => diagonal (center-max point) = sqrt(2) * half_width / 2.0f | => 1/2 sqrt(2) * half_width
     
     for (int i = 0; i < 6; ++i)
     {
@@ -45,19 +45,17 @@ void main(in uint I  : SV_GroupIndex,
     // Flush the cache and synchronize
     GroupMemoryBarrierWithGroupSync();
 
-    // Read the first task arguments in order to get some constant data
     const uint gid = wg * GROUP_SIZE + I;
     
     // Get the node for this thread group
-    DepthPrepassDrawTask node = BestOccluders[wg];
+    int bestOccluderCount = BestOccluders[0].BestOccluderCount;
     
     // Access node indices for each thread 
-    if ((g_Constants.FrustumCulling == 0 || IsVisible(node.BasePosAndScale)) // frustum culling
-        && gid < node.BestOccluderCount)                                     // only draw valid occluders
+    if (gid < bestOccluderCount)    // only draw valid occluders
     {
-        DepthPrepassDrawTask task = BestOccluders[I];
-        float3 pos = task.BasePosAndScale.xyz;
-        float scale = task.BasePosAndScale.w * 0.5f;
+        DepthPrepassDrawTask node = BestOccluders[gid];
+        float3 pos = node.BasePosAndScale.xyz;
+        float scale = node.BasePosAndScale.w * 0.5f;
     
         // Atomically increase task count
         uint index = 0;
