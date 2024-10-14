@@ -543,6 +543,11 @@ namespace Diligent
         }
     }
 
+    uint32_t Tutorial20_MeshShader::ComputeMipLevelsCount(uint32_t width, uint32_t height) const
+    {
+        return 1 + static_cast<uint32_t>(floor(log2((std::max)(width, height))));
+    }
+
     void Tutorial20_MeshShader::CreateDepthBuffers()
     {
         /*
@@ -568,6 +573,9 @@ namespace Diligent
         
         if (m_pDepthBufferCpyUAV.RawPtr() != nullptr)
             m_pDepthBufferCpyUAV.Release();
+
+        if (m_pHiZBuffer.RawPtr() != nullptr)
+            m_pHiZBuffer.Release();
 
         ITextureView* pDepthBufferDSV = m_pSwapChain->GetDepthBufferDSV();
         ITexture*     pDepthTexture   = pDepthBufferDSV->GetTexture();
@@ -599,6 +607,19 @@ namespace Diligent
         OcclusionUAVDesc.ViewType = TEXTURE_VIEW_UNORDERED_ACCESS;
         m_pDepthBufferCpy->CreateView(OcclusionUAVDesc, &m_pDepthBufferCpyUAV);
         VERIFY_EXPR(m_pDepthBufferCpyUAV != nullptr);
+
+        // Create HiZ Buffer for occlusion culling
+        TextureDesc HiZDesc;
+        HiZDesc.Type      = RESOURCE_DIM_TEX_2D;
+        HiZDesc.Width     = DepthTexDesc.Width;
+        HiZDesc.Height    = DepthTexDesc.Height;
+        HiZDesc.Format    = TEX_FORMAT_R32_FLOAT; // Use R32_FLOAT for high precision
+        HiZDesc.MipLevels = ComputeMipLevelsCount(HiZDesc.Width, HiZDesc.Height);
+        HiZDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
+        HiZDesc.Usage     = USAGE_DEFAULT;
+
+        m_pDevice->CreateTexture(HiZDesc, nullptr, &m_pHiZBuffer);
+        VERIFY_EXPR(m_pHiZBuffer != nullptr);
     }
 
     void Tutorial20_MeshShader::DepthPrepass() const

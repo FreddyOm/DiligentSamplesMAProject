@@ -67,6 +67,7 @@ namespace Diligent
 
         // 2 Pass Depth OC
         void                   CreateDepthBuffers();
+        uint32_t ComputeMipLevelsCount(uint32_t width, uint32_t height) const;
         void DepthPrepass() const;
     
         RefCntAutoPtr<IBuffer>      m_CubeBuffer;
@@ -90,6 +91,9 @@ namespace Diligent
         RefCntAutoPtr<ITexture>     m_pDepthBufferCpy;
         RefCntAutoPtr<ITextureView> m_pDepthBufferCpySRV;
         RefCntAutoPtr<ITextureView> m_pDepthBufferCpyUAV;
+
+        RefCntAutoPtr<ITexture> m_pHiZBuffer;
+
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pSRB;
