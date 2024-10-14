@@ -25,7 +25,7 @@ set(SHADERS
     assets/cube_msh.hlsl
     assets/cube_psh.hlsl
     assets/structures.fxh
-    assets/depth_reprojection_comp.hlsl
+    assets/generate_HiZ.hlsl
 )
 
 set(ASSETS

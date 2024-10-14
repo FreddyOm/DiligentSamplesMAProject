@@ -93,6 +93,7 @@ namespace Diligent
         RefCntAutoPtr<ITextureView> m_pDepthBufferCpyUAV;
 
         RefCntAutoPtr<ITexture> m_pHiZBuffer;
+        RefCntAutoPtr<ITextureView> m_pHiZUAV;
 
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;
@@ -101,6 +102,9 @@ namespace Diligent
         RefCntAutoPtr<IPipelineState> m_pDepthOnlyPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pDepthOnlySRB;
     
+        RefCntAutoPtr<IPipelineState>         m_pHiZComputePSO;
+        RefCntAutoPtr<IShaderResourceBinding> m_pHiZComputeSRB;
+
         StateTransitionDesc m_TransitionBarrier[2];
         StateTransitionDesc m_ResetTransitionBarrier[2];
 

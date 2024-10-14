@@ -420,7 +420,7 @@ namespace Diligent
             m_pDevice->CreateShader(ShaderCI, &pPS);
             VERIFY_EXPR(pPS != nullptr);
         }
-    
+
         // clang-format off
         // Define immutable sampler for g_Texture. Immutable samplers should be used whenever possible
         SamplerDesc SamLinearClampDesc
@@ -541,6 +541,42 @@ namespace Diligent
             m_ResetTransitionBarrier[1].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
             m_ResetTransitionBarrier[1].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
         }
+
+        {
+            // Create compute pipeline state
+            ComputePipelineStateCreateInfo HiZPSOCreateInfo{};
+            HiZPSOCreateInfo.PSODesc.Name         = "HiZ Generation PSO";
+            HiZPSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_COMPUTE;
+
+            PipelineResourceLayoutDesc PRLDesc{};
+            PRLDesc.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
+            
+
+            HiZPSOCreateInfo.PSODesc.ResourceLayout = PRLDesc;
+
+            // Create HiZ Buffer comput shader resource
+            RefCntAutoPtr<IShader> pCS;
+            {
+                ShaderCI.Desc.ShaderType = SHADER_TYPE_COMPUTE;
+                ShaderCI.EntryPoint      = "CS_GenerateHiZ";
+                ShaderCI.Desc.Name       = "HiZ Generation CS";
+                ShaderCI.FilePath        = "generate_HiZ.hlsl";
+
+                m_pDevice->CreateShader(ShaderCI, &pCS);
+                VERIFY_EXPR(pCS != nullptr);
+            }
+            HiZPSOCreateInfo.pCS                  = pCS;
+            
+            // Create compute pipeline state object
+            m_pDevice->CreateComputePipelineState(HiZPSOCreateInfo, &m_pHiZComputePSO);
+            VERIFY_EXPR(m_pHiZComputePSO != nullptr);
+
+            m_pHiZComputePSO->CreateShaderResourceBinding(&m_pHiZComputeSRB, true);
+            VERIFY_EXPR(m_pHiZComputeSRB != nullptr);
+
+            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InverseDepthBuffer")->Set(m_pDepthBufferCpySRV);
+            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "HiZBuffer")->Set(m_pHiZUAV);
+        }
     }
 
     uint32_t Tutorial20_MeshShader::ComputeMipLevelsCount(uint32_t width, uint32_t height) const
@@ -556,13 +592,12 @@ namespace Diligent
             |-------------------------|
 
             |-------------------------|
-            |  Main Depth Buffer Cpy  |-------------> First Prepass: Copy main depth buffer and create HiZ
-            |-------------------------|
-            
-            |-------------------------|
-            | Prev Frame Depth Buffer |-------------> EOF: Copy last frames depth buffer! 
+            |  Main Depth Buffer Cpy  |-------------> First Prepass: Copy main depth buffer
             |-------------------------|
 
+            |-------------------------|
+            |       HiZ Buffer        |-------------> First Prepass: Generate hierarchical Z Buffer from main depth buffer cpy
+            |-------------------------|
         */
 
         if (m_pDepthBufferCpy.RawPtr() != nullptr)
@@ -577,6 +612,9 @@ namespace Diligent
         if (m_pHiZBuffer.RawPtr() != nullptr)
             m_pHiZBuffer.Release();
 
+        if (m_pHiZUAV.RawPtr() != nullptr)
+            m_pHiZUAV.Release();
+
         ITextureView* pDepthBufferDSV = m_pSwapChain->GetDepthBufferDSV();
         ITexture*     pDepthTexture   = pDepthBufferDSV->GetTexture();
         const auto&   DepthTexDesc    = pDepthTexture->GetDesc();
@@ -586,12 +624,7 @@ namespace Diligent
         OcclusionTexDesc.Name        = "Occlusion Computation Texture";
         OcclusionTexDesc.Usage       = USAGE_DEFAULT;
         OcclusionTexDesc.BindFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-        
-        // If the original depth buffer is using a depth-specific format, we need to use a compatible color format
-        if (OcclusionTexDesc.Format == TEX_FORMAT_D32_FLOAT)
-            OcclusionTexDesc.Format = TEX_FORMAT_R32_FLOAT;
-        else if (OcclusionTexDesc.Format == TEX_FORMAT_D24_UNORM_S8_UINT)
-            OcclusionTexDesc.Format = TEX_FORMAT_R24_UNORM_X8_TYPELESS;
+        OcclusionTexDesc.Format      = TEX_FORMAT_R32_FLOAT;
 
         m_pDevice->CreateTexture(OcclusionTexDesc, nullptr, &m_pDepthBufferCpy);
         VERIFY_EXPR(m_pDepthBufferCpy != nullptr);
@@ -613,13 +646,20 @@ namespace Diligent
         HiZDesc.Type      = RESOURCE_DIM_TEX_2D;
         HiZDesc.Width     = DepthTexDesc.Width;
         HiZDesc.Height    = DepthTexDesc.Height;
-        HiZDesc.Format    = TEX_FORMAT_R32_FLOAT; // Use R32_FLOAT for high precision
+        HiZDesc.Format    = TEX_FORMAT_R32_FLOAT;
         HiZDesc.MipLevels = ComputeMipLevelsCount(HiZDesc.Width, HiZDesc.Height);
         HiZDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
         HiZDesc.Usage     = USAGE_DEFAULT;
 
         m_pDevice->CreateTexture(HiZDesc, nullptr, &m_pHiZBuffer);
         VERIFY_EXPR(m_pHiZBuffer != nullptr);
+
+        // Create unordered access view for HiZ texture
+        TextureViewDesc HiZUAVDesc;
+        HiZUAVDesc.ViewType   = TEXTURE_VIEW_UNORDERED_ACCESS;
+        HiZUAVDesc.TextureDim = RESOURCE_DIM_TEX_2D;
+        m_pHiZBuffer->CreateView(HiZUAVDesc, &m_pHiZUAV);
+        VERIFY_EXPR(m_pHiZUAV != nullptr);
     }
 
     void Tutorial20_MeshShader::DepthPrepass() const
