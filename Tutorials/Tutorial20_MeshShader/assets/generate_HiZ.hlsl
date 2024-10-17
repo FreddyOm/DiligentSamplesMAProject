@@ -1,16 +1,34 @@
-Texture2D<float> InverseDepthBuffer : register(t0);
-RWTexture2D<float> HiZBuffer : register(u0);
+Texture2D<float> InputTexture : register(t0);
+RWTexture2D<float> OutputTexture : register(u0);
 
-[numthreads(8, 8, 1)]
-void CS_GenerateHiZ(uint3 DispatchThreadID : SV_DispatchThreadID)
+cbuffer Constants : register(b0)
 {
-    uint2 texCoord = DispatchThreadID.xy * 2; // We're reducing resolution by half
-    
-    float depth1 = InverseDepthBuffer[texCoord + uint2(0, 0)];
-    float depth2 = InverseDepthBuffer[texCoord + uint2(1, 0)];
-    float depth3 = InverseDepthBuffer[texCoord + uint2(0, 1)];
-    float depth4 = InverseDepthBuffer[texCoord + uint2(1, 1)];
-    
-    // Store the maximum (nearest) depth value for inverse depth buffer
-    HiZBuffer[DispatchThreadID.xy] = max(max(depth1, depth2), max(depth3, depth4));
+    uint2 InputDimensions;
+    uint2 OutputDimensions;
+    uint Level;
+};
+
+#define THREAD_GROUP_SIZE 32
+
+[numthreads(THREAD_GROUP_SIZE, THREAD_GROUP_SIZE, 1)]
+void main(uint3 DTid : SV_DispatchThreadID)
+{
+    // Early exit if we're outside the output dimensions
+    if (any(DTid.xy >= OutputDimensions))
+        return;
+
+    // Calculate the corresponding position in the input texture
+    uint2 InputPos = DTid.xy * 2;
+
+    // Sample four texels from the input texture
+    float z1 = InputTexture.Load(int3(InputPos, 0));
+    float z2 = InputTexture.Load(int3(min(InputPos + uint2(1, 0), InputDimensions - 1), 0));
+    float z3 = InputTexture.Load(int3(min(InputPos + uint2(0, 1), InputDimensions - 1), 0));
+    float z4 = InputTexture.Load(int3(min(InputPos + uint2(1, 1), InputDimensions - 1), 0));
+
+    // Find the maximum Z value (assuming reverse Z)
+    float maxZ = max(max(z1, z2), max(z3, z4));
+
+    // Write the result
+    OutputTexture[DTid.xy] = maxZ;
 }

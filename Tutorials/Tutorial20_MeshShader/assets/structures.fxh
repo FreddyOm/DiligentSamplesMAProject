@@ -56,3 +56,11 @@ struct Payload
     float Scale[GROUP_SIZE];
     float MSRand[GROUP_SIZE];
 };
+
+struct HiZConstants
+{
+    uint2 InputDimensions;
+    uint2 OutputDimensions;
+    uint Level;
+    uint Padding[3];
+};

@@ -67,8 +67,9 @@ namespace Diligent
 
         // 2 Pass Depth OC
         void                   CreateDepthBuffers();
-        uint32_t ComputeMipLevelsCount(uint32_t width, uint32_t height) const;
-        void DepthPrepass() const;
+        void                   DepthPrepass();
+        void                   CreateHiZTextures();
+        void                   GenerateHiZ();
     
         RefCntAutoPtr<IBuffer>      m_CubeBuffer;
         RefCntAutoPtr<ITextureView> m_CubeTextureSRV;
@@ -94,6 +95,7 @@ namespace Diligent
 
         RefCntAutoPtr<ITexture> m_pHiZBuffer;
         RefCntAutoPtr<ITextureView> m_pHiZUAV;
+        std::vector<RefCntAutoPtr<ITexture>> m_HiZPyramid;
 
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;
@@ -105,8 +107,12 @@ namespace Diligent
         RefCntAutoPtr<IPipelineState>         m_pHiZComputePSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pHiZComputeSRB;
 
+        RefCntAutoPtr<IBuffer> m_pHiZConstantBuffer;
+
         StateTransitionDesc m_TransitionBarrier[2];
         StateTransitionDesc m_ResetTransitionBarrier[2];
+
+        StateTransitionDesc m_HiZBarriers[1];
 
         FirstPersonCamera fpc{};
         ViewFrustum       Frustum{};
