@@ -89,9 +89,6 @@ namespace Diligent
         RefCntAutoPtr<IBuffer> m_pBestOccluderBuffer;
         RefCntAutoPtr<IBuffer> m_pOctreeNodeBuffer;
         RefCntAutoPtr<IBuffer> m_pConstants;
-        RefCntAutoPtr<ITexture>     m_pDepthBufferCpy;
-        RefCntAutoPtr<ITextureView> m_pDepthBufferCpySRV;
-        RefCntAutoPtr<ITextureView> m_pDepthBufferCpyUAV;
 
         RefCntAutoPtr<ITexture> m_pHiZBuffer;
         RefCntAutoPtr<ITextureView> m_pHiZUAV;
@@ -109,10 +106,8 @@ namespace Diligent
 
         RefCntAutoPtr<IBuffer> m_pHiZConstantBuffer;
 
-        StateTransitionDesc m_TransitionBarrier[2];
-        StateTransitionDesc m_ResetTransitionBarrier[2];
-
-        StateTransitionDesc m_HiZBarriers[1];
+        StateTransitionDesc m_TransitionBarrier[1];
+        StateTransitionDesc m_ResetTransitionBarrier[1];
 
         FirstPersonCamera fpc{};
         ViewFrustum       Frustum{};

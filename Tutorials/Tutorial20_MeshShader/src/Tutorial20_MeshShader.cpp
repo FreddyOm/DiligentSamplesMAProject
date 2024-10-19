@@ -519,13 +519,6 @@ namespace Diligent
             m_TransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
             m_TransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
 
-            m_TransitionBarrier[1]                = {};
-            m_TransitionBarrier[1].pResource      = m_pDepthBufferCpy;
-            m_TransitionBarrier[1].OldState       = RESOURCE_STATE_UNKNOWN;
-            m_TransitionBarrier[1].NewState       = RESOURCE_STATE_COPY_DEST;
-            m_TransitionBarrier[1].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-            m_TransitionBarrier[1].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-
 
             m_ResetTransitionBarrier[0]                = {};
             m_ResetTransitionBarrier[0].pResource      = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
@@ -534,12 +527,6 @@ namespace Diligent
             m_ResetTransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
             m_ResetTransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
 
-            m_ResetTransitionBarrier[1]                = {};
-            m_ResetTransitionBarrier[1].pResource      = m_pDepthBufferCpy;
-            m_ResetTransitionBarrier[1].OldState       = RESOURCE_STATE_UNKNOWN;
-            m_ResetTransitionBarrier[1].NewState       = RESOURCE_STATE_COPY_SOURCE;
-            m_ResetTransitionBarrier[1].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-            m_ResetTransitionBarrier[1].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
         }
 
         {
@@ -604,15 +591,6 @@ namespace Diligent
             m_pHiZComputePSO->CreateShaderResourceBinding(&m_pHiZComputeSRB, true);
             VERIFY_EXPR(m_pHiZComputeSRB != nullptr);
 
-            // Transition depth texture to shader resource state
-            m_HiZBarriers[0].pResource       = m_pDepthBufferCpy;
-            m_HiZBarriers[0].OldState        = RESOURCE_STATE_UNKNOWN;
-            m_HiZBarriers[0].NewState        = RESOURCE_STATE_SHADER_RESOURCE;
-            m_HiZBarriers[0].TransitionType  = STATE_TRANSITION_TYPE_IMMEDIATE;
-            m_HiZBarriers[0].Flags           = STATE_TRANSITION_FLAG_UPDATE_STATE;
-            m_HiZBarriers[0].MipLevelsCount  = 0;
-            m_HiZBarriers[0].ArraySliceCount = 0;
-
             CreateHiZTextures();
         }
     }
@@ -624,49 +602,20 @@ namespace Diligent
             |   Main Depth Buffer     |-------------> First Prepass: Render best occluders into main depth buffer
             |-------------------------|
 
-            |-------------------------|
-            |  Main Depth Buffer Cpy  |-------------> First Prepass: Copy main depth buffer
-            |-------------------------|
+            Copy depth buffer to Lvl 0 of z-pyramid
 
             |-------------------------|
-            |       HiZ Buffer        |-------------> First Prepass: Generate hierarchical Z Buffer from main depth buffer cpy
+            |       HiZ Pyramid       |-------------> First Prepass: Generate hierarchical Z Buffer from main depth buffer cpy
             |-------------------------|
         */
 
-        if (m_pDepthBufferCpy.RawPtr() != nullptr)
-            m_pDepthBufferCpy.Release();
-        
-        if (m_pDepthBufferCpySRV.RawPtr() != nullptr)
-            m_pDepthBufferCpySRV.Release();
-        
-        if (m_pDepthBufferCpyUAV.RawPtr() != nullptr)
-            m_pDepthBufferCpyUAV.Release();
+        for (auto& p_Miplevel : m_HiZPyramid)
+        {
+            if (p_Miplevel.RawPtr() != nullptr)
+                p_Miplevel.Release();
+        }
 
-        ITextureView* pDepthBufferDSV = m_pSwapChain->GetDepthBufferDSV();
-        ITexture*     pDepthTexture   = pDepthBufferDSV->GetTexture();
-        const auto&   DepthTexDesc    = pDepthTexture->GetDesc();
-
-        // Create a separate texture for occlusion culling computations
-        TextureDesc DepthBufCpyDesc = DepthTexDesc; // Copy the description of the depth texture
-        DepthBufCpyDesc.Name        = "Occlusion Computation Texture";
-        DepthBufCpyDesc.Usage       = USAGE_DEFAULT;
-        DepthBufCpyDesc.BindFlags   = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-        DepthBufCpyDesc.Format      = TEX_FORMAT_R32_FLOAT;
-
-        m_pDevice->CreateTexture(DepthBufCpyDesc, nullptr, &m_pDepthBufferCpy);
-        VERIFY_EXPR(m_pDepthBufferCpy != nullptr);
-
-        // Create SRV for the occlusion texture
-        TextureViewDesc             DepthBufCpySRVDesc;
-        DepthBufCpySRVDesc.ViewType = TEXTURE_VIEW_SHADER_RESOURCE;
-        m_pDepthBufferCpy->CreateView(DepthBufCpySRVDesc, &m_pDepthBufferCpySRV);
-        VERIFY_EXPR(m_pDepthBufferCpySRV != nullptr);
-
-        // Create UAV for the occlusion texture
-        TextureViewDesc             DepthBufCpyUAVDesc;
-        DepthBufCpyUAVDesc.ViewType = TEXTURE_VIEW_UNORDERED_ACCESS;
-        m_pDepthBufferCpy->CreateView(DepthBufCpyUAVDesc, &m_pDepthBufferCpyUAV);
-        VERIFY_EXPR(m_pDepthBufferCpyUAV != nullptr);
+        CreateHiZTextures();
     }
 
     void Tutorial20_MeshShader::DepthPrepass()
@@ -676,7 +625,7 @@ namespace Diligent
 
         // Set depth-stencil view
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
-        m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
+        //m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
         m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
         // Draw best occluders. Task count doesn't change, since the buffers are all the same, we just discard 
@@ -686,10 +635,13 @@ namespace Diligent
         DrawMeshAttribs drawAttrs{m_DepthPassDrawTaskCount, DRAW_FLAG_VERIFY_ALL};
         m_pImmediateContext->DrawMesh(drawAttrs);
         
+        // Unset depth buffer when copying
+        m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
+
         // Copy and store best occluder depth buffer
         CopyTextureAttribs storeDepthBufAttribs{};
         storeDepthBufAttribs.pSrcTexture              = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
-        storeDepthBufAttribs.pDstTexture              = m_pDepthBufferCpy;
+        storeDepthBufAttribs.pDstTexture              = m_HiZPyramid[0];
         storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
         storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
 
@@ -701,9 +653,11 @@ namespace Diligent
 
     void Tutorial20_MeshShader::CreateHiZTextures()
     {
-        const uint32_t BaseWidth  = m_pSwapChain->GetDesc().Width / 2;  // @TODO: Either make first mip level half the size or 
-        const uint32_t BaseHeight = m_pSwapChain->GetDesc().Height / 2; // start with mip level 1 and copy buffer into level 0 seperatly
-        uint32_t       LevelCount = 0;                                  // @TODO: Check if I can cpy depth stencil to first mip level in the first place
+        m_HiZPyramid.clear();
+
+        const uint32_t BaseWidth  = m_pSwapChain->GetDesc().Width;
+        const uint32_t BaseHeight = m_pSwapChain->GetDesc().Height; 
+        uint32_t       LevelCount = 0;
 
         for (uint32_t w = BaseWidth, h = BaseHeight; w > 1 && h > 1; w >>= 1, h >>= 1)
         {
@@ -727,55 +681,39 @@ namespace Diligent
     #define THREAD_GROUP_SIZE 32
 
     void Tutorial20_MeshShader::GenerateHiZ()
-    {
-        m_HiZBarriers[0].NewState = RESOURCE_STATE_SHADER_RESOURCE;
-        m_pImmediateContext->TransitionResourceStates(_countof(m_HiZBarriers), m_HiZBarriers);
+    {        
+        // Set the last mip level to state unordered access (?)
+        StateTransitionDesc lastMipLvlBarrier{};
+        lastMipLvlBarrier.pResource = m_HiZPyramid[m_HiZPyramid.size() - 1];
+        lastMipLvlBarrier.OldState  = RESOURCE_STATE_UNKNOWN;
+        lastMipLvlBarrier.NewState  = RESOURCE_STATE_UNORDERED_ACCESS;
+        lastMipLvlBarrier.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+        lastMipLvlBarrier.Flags     = STATE_TRANSITION_FLAG_UPDATE_STATE;
+
+        m_pImmediateContext->TransitionResourceStates(1, &lastMipLvlBarrier);
 
         // Set pipeline state and commit shader resources
         m_pImmediateContext->SetPipelineState(m_pHiZComputePSO);
-
-        StateTransitionDesc resetTexBarrier;
-        resetTexBarrier.pResource      = m_HiZPyramid[6];
-        resetTexBarrier.OldState       = RESOURCE_STATE_UNKNOWN;
-        resetTexBarrier.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
-        resetTexBarrier.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-        resetTexBarrier.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-
-        m_pImmediateContext->TransitionResourceStates(1, &resetTexBarrier);
-
         m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);
 
-        const uint32_t BaseWidth  = m_pDepthBufferCpy->GetDesc().Width;
-        const uint32_t BaseHeight = m_pDepthBufferCpy->GetDesc().Height;
 
-        for (Uint32 mipLevel = 0; mipLevel < m_HiZPyramid.size(); ++mipLevel)
+        // Start with the level 1 since level 0 is a direct copy of the depth buffer
+        for (Uint32 mipLevel = 1; mipLevel < m_HiZPyramid.size(); ++mipLevel)
         {
-            uint32_t InputWidth   = (mipLevel == 0) ? BaseWidth : m_HiZPyramid[mipLevel - 1]->GetDesc().Width;
-            uint32_t InputHeight  = (mipLevel == 0) ? BaseHeight : m_HiZPyramid[mipLevel - 1]->GetDesc().Height;
+            uint32_t InputWidth   = m_HiZPyramid[mipLevel - 1]->GetDesc().Width;
+            uint32_t InputHeight  = m_HiZPyramid[mipLevel - 1]->GetDesc().Height;
             uint32_t OutputWidth  = m_HiZPyramid[mipLevel]->GetDesc().Width;
             uint32_t OutputHeight = m_HiZPyramid[mipLevel]->GetDesc().Height;
 
 
             uint32_t GroupsX = (OutputWidth + THREAD_GROUP_SIZE - 1) / THREAD_GROUP_SIZE;
             uint32_t GroupsY = (OutputHeight + THREAD_GROUP_SIZE - 1) / THREAD_GROUP_SIZE;
-            // Skip levels where GroupsX or GroupsY become 0
-            if ((std::max)(GroupsX, GroupsY) == 0)
-            {
-                break;
-            }
-            // Set shader resources
-            if (mipLevel == 0)
-            {
-                // For the first level, use the depth buffer as input
-                m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_pDepthBufferCpy->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
-            }
-            else
-            {
-                // For subsequent levels, use the previous level as input
-                m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_HiZPyramid[mipLevel - 1]->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
-            }
             
-            // Set the current level as output
+            // Early exit when GroupsX or GroupsY become 0
+            if ((std::max)(GroupsX, GroupsY) == 0) break;
+            
+            // Set the input and  output shader resources
+            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_HiZPyramid[mipLevel - 1]->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
             m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "OutputTexture")->Set(m_HiZPyramid[mipLevel]->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
 
             // Update const buffer data and map data to GPU memory
@@ -804,21 +742,6 @@ namespace Diligent
 
             m_pImmediateContext->TransitionResourceStates(1, &outputTexBarrier);
         }
-
-        // Reset all z pyramid mip map states
-        for (auto& mipLevel : m_HiZPyramid)
-        {
-            StateTransitionDesc outputTexBarrier;
-            outputTexBarrier.pResource      = mipLevel;
-            outputTexBarrier.OldState       = RESOURCE_STATE_UNKNOWN;
-            outputTexBarrier.NewState       = RESOURCE_STATE_SHADER_RESOURCE;
-            outputTexBarrier.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-            outputTexBarrier.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-            m_pImmediateContext->TransitionResourceStates(1, &outputTexBarrier);
-        }
-
-        m_HiZBarriers[0].NewState = RESOURCE_STATE_COPY_DEST;
-        m_pImmediateContext->TransitionResourceStates(_countof(m_HiZBarriers), m_HiZBarriers);
 
         // Flush the context to ensure all commands are executed
         m_pImmediateContext->Flush();
@@ -921,6 +844,7 @@ namespace Diligent
             DepthPrepass();
 
             // Clear Depth Stencil to avoid flickering (Remove later, should be able to just )
+            m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
             m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         }        
 
