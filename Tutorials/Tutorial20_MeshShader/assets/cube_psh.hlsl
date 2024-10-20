@@ -7,6 +7,7 @@ struct PSInput
     float4 Pos : SV_POSITION;
     float4 Color : COLOR;
     float2 UV : TEXCOORD;
+    float3 Normal : NORMAL;
 };
 
 struct PSOutput
@@ -15,18 +16,31 @@ struct PSOutput
 };
 
 
+static const float3 g_LightDirection = normalize(float3(-1.0f, -1.0f, -1.0f)); // Static light direction
+static const float4 g_LightColor = float4(1.0f, 1.0f, 1.0f, 1.0f); // Light color (white)
+static const float g_AmbientIntensity = 0.2f;
+
 void main(in PSInput PSIn,
           out PSOutput PSOut)
 {    
+    // Normalize the interpolated normal
+    float3 normal = normalize(PSIn.Normal);
+
+    // Compute the diffuse lighting (Lambertian)
+    float diffuseIntensity = saturate(dot(normal, -g_LightDirection));
+
+    // Combine ambient and diffuse lighting
+    float4 diffuseColor = diffuseIntensity * g_LightColor;
+    float4 ambientColor = g_AmbientIntensity * g_LightColor;
+    float4 finalColor = ambientColor + diffuseColor;
+
+    // Combine final lighting color with texture color or mesh color
     if (length(PSIn.Color.xyz) > 0.0f)
     {
-        PSOut.Color = PSIn.Color;
+        PSOut.Color = PSIn.Color * finalColor;
     }
     else
     {
-        PSOut.Color = g_Texture.Sample(g_Texture_sampler, PSIn.UV);
+        PSOut.Color = g_Texture.Sample(g_Texture_sampler, PSIn.UV) * finalColor;
     }
-    
-    //float depth = PSIn.Pos.z / PSIn.Pos.w;
-    //PSOut.Color = float4(depth, depth, depth, 1.0f);
 }

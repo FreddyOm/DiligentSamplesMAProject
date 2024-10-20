@@ -4,19 +4,24 @@
 #define SHOW_STATISTICS 1
 #endif
 
+Texture2D<float> HiZPyramid : register(t0);
+SamplerState HiZPyramid_sampler;
+
+// Statistics buffer contains the global counter of visible objects
+RWByteAddressBuffer Statistics : register(u0);
+
 // Ordered voxel position buffer
-StructuredBuffer<VoxelBufData> VoxelPositionBuffer;
+StructuredBuffer<VoxelBufData> VoxelPositionBuffer : register(t1);
 
 // Octree nodes
-StructuredBuffer<OctreeLeafNode> OctreeNodes;
+StructuredBuffer<OctreeLeafNode> OctreeNodes : register(t2);
 
-cbuffer cbConstants
+
+cbuffer cbConstants : register(b0)
 {
     Constants g_Constants;
 }
 
-// Statistics buffer contains the global counter of visible objects
-RWByteAddressBuffer Statistics;
 
 // Payload will be used in the mesh shader.
 groupshared Payload s_Payload;
@@ -32,6 +37,36 @@ bool IsVisible(float4 basePosAndScale)
             return false;
     }
     return true;
+}
+
+// HiZ occlusion culling
+bool IsOccluded(float3 worldPos, float radius)
+{
+    float4 clipPos = mul(float4(worldPos, 1.0), g_Constants.ViewProjMat);
+    float2 screenPos = clipPos.xy / clipPos.w * float2(0.5, -0.5) + 0.5;
+    
+    float depth = clipPos.z / clipPos.w;
+    float minDepth = depth - radius;
+    float maxDepth = depth + radius;
+    
+    uint numLevels = 1; // At least one mip level is assumed
+    //HiZPyramid.GetDimensions(0, 0, 0, numLevels);
+
+    for (uint mipLevel = 0; mipLevel < numLevels; ++mipLevel)
+    {
+        float2 mipSize;
+        HiZPyramid.GetDimensions(mipLevel, mipSize.x, mipSize.y, numLevels);
+        float2 uv = screenPos * mipSize;
+        float hiZDepth = HiZPyramid.SampleLevel(HiZPyramid_sampler, uv, mipLevel).r;
+
+        if (maxDepth < hiZDepth)
+            return true; // Culled
+
+        if (minDepth > hiZDepth)
+            return false; // Visible
+    }
+
+    return false; // Visible if we've gone through all mip levels
 }
 
 // The number of cubes that are visible by the camera,
@@ -66,14 +101,15 @@ void main(in uint I  : SV_GroupIndex,
     int padding = (int) node.RandomValue.z;
     
     
+        //&& !IsOccluded(VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale.xyz, VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale.w * 1.41)
     // Access node indices for each thread 
     if ((g_Constants.FrustumCulling == 0 || IsVisible(node.BasePosAndScale)) // frustum culling
-        && I < node.VoxelBufDataCount && (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount == 64))                                       // only draw valid voxels
+        && I < node.VoxelBufDataCount && (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount == 64)) // only draw valid voxels
     {
         VoxelBufData voxel  = VoxelPositionBuffer[node.VoxelBufStartIndex + I];
         float3 pos          = voxel.BasePosAndScale.xyz;
-        float scale         = voxel.BasePosAndScale.w;
-    
+        float scale = voxel.BasePosAndScale.w;
+        
         // Atomically increase task count
         uint index = 0;
         InterlockedAdd(s_TaskCount, 1, index);

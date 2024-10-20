@@ -10,6 +10,7 @@ struct PSInput
     float4 Pos   : SV_POSITION; 
     float4 Color : COLOR;
     float2 UV    : TEXCOORD;
+    float3 Normal : NORMAL;
 };
 
 static const uint constCubeIndices[12 * 3] =
@@ -84,6 +85,39 @@ static const float2 constCubeUVs[24] =
     float2(0.5f, 0.0f),
 };
 
+static const float3 constCubeNormals[24] =
+{
+    float3(0, 0, 1),
+    float3(0, 0, 1),
+    float3(0, 0, 1),
+    float3(0, 0, 1),
+
+    float3(0, 0, -1),
+    float3(0, 0, -1),
+    float3(0, 0, -1),
+    float3(0, 0, -1),
+
+    float3(1, 0, 0),
+    float3(1, 0, 0),
+    float3(1, 0, 0),
+    float3(1, 0, 0),
+
+    float3(-1, 0, 0),
+    float3(-1, 0, 0),
+    float3(-1, 0, 0),
+    float3(-1, 0, 0),
+
+    float3(0, 1, 0),
+    float3(0, 1, 0),
+    float3(0, 1, 0),
+    float3(0, 1, 0),
+
+    float3(0, -1, 0),
+    float3(0, -1, 0),
+    float3(0, -1, 0),
+    float3(0, -1, 0),
+};
+
 const static float4 primitiveColors[20] =
 {
     float4(76.f / 255.f, 74.f / 255.f, 89.f / 255.f, 1.0f), // Dunkelviolett
@@ -119,8 +153,8 @@ float4 getRandomPrimitiveColor(float randMeshletVal)
 void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader output (0 .. 23)
           in uint gid : SV_GroupID,      // work group index used to access amplification shader output (0 .. s_TaskCount-1)
           in  payload  Payload  payload, // entire amplification shader output can be accessed by the mesh shader
-          out indices  uint3    tris[12],
-          out vertices PSInput  verts[24])
+          out indices uint3 tris[12],
+          out vertices PSInput verts[24])
 {        
     // The cube contains 24 vertices, 36 indices for 12 triangles.
     // Only the input values from the the first active thread are used.
@@ -136,11 +170,10 @@ void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader 
     
     // Each thread handles only one vertex
     verts[I].Pos = mul(float4(pos + constCubePos[I].xyz * scale, 1.0), g_Constants.ViewProjMat);
-    // Perform perspective division
-    //verts[I].Pos.z /= verts[I].Pos.w;
+    verts[I].Normal = mul(float4(constCubeNormals[I], 0.0), g_Constants.ViewProjMat).xyz;
+    
     verts[I].UV = constCubeUVs[I].xy;
     verts[I].Color = g_Constants.MSDebugViz * getRandomPrimitiveColor((randValue + ((1 - g_Constants.OctreeDebugViz) * 0.1f * gid)) % 1.0f);
-    
     
     // Only the first 12 threads write indices. We must not access the array outside of its bounds.
     if (I < 12)
