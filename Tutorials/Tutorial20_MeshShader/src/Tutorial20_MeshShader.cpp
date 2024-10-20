@@ -480,6 +480,9 @@ namespace Diligent
         if (m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture"))
             m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture")->Set(m_CubeTextureSRV);
 
+        if (m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "cbConstants"))
+            m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "cbConstants")->Set(m_pConstants);
+
 
         CreateDepthPrepassPipeline(pASBestOccluders, pMS);
         CreateHiZMipGenerationPipeline(ShaderCI);
@@ -781,6 +784,7 @@ namespace Diligent
             ImGui::Checkbox("MS Debug Visualization", &m_MSDebugViz);
             ImGui::Checkbox("Octree Debug Visualization", &m_OTDebugViz);
             ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
+            ImGui::Checkbox("Enable Light", &m_UseLight);
 
             if (ImGui::Button("Reset Camera"))
             {
@@ -848,6 +852,7 @@ namespace Diligent
             CBConstants->ShowOnlyBestOccluders  = m_ShowOnlyBestOccluders ? 1 : 0;
             CBConstants->MSDebugViz             = m_MSDebugViz ? 1.0f : 0.0f;
             CBConstants->OctreeDebugViz         = m_OTDebugViz ? 1.0f : 0.0f;
+            CBConstants->UseLight               = m_UseLight ? 1 : 0;
     
             // Calculate frustum planes from view-projection matrix.
             if (m_SyncCamPosition)

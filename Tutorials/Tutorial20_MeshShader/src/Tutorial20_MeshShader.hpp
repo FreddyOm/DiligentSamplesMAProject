@@ -130,6 +130,7 @@ namespace Diligent
         float       m_CurrTime       = 0.0f;
         Uint32      m_VisibleCubes   = 0;
         Uint32      m_VisibleOTNodes = 0;
+        bool        m_UseLight       = true;
     
         OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;
     };

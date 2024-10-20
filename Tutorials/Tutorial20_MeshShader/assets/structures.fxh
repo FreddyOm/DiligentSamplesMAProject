@@ -40,8 +40,9 @@ struct Constants
     uint FrustumCulling;        // 4    // @TODO: Change this to single bits in one uint
     
     uint ShowOnlyBestOccluders; // 4
-
-    uint3 Padding;              // 12
+    uint UseLight;              // 4
+    
+    uint2 Padding;              // 8
 };
 
 // Payload size must be less than 16kb.
