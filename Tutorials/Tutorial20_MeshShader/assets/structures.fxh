@@ -1,5 +1,5 @@
 #ifndef GROUP_SIZE
-#define GROUP_SIZE 125   // max 1024
+#define GROUP_SIZE 64   // max 1024
 #endif
 
 // 32 bytes
