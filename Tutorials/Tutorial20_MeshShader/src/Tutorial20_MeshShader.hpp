@@ -81,7 +81,7 @@ namespace Diligent
         Uint64                 m_FrameId               = 1; // Can't signal 0
         const Uint32           m_StatisticsHistorySize = 8;
     
-        static constexpr Int32 ASGroupSize = 125; // max 1024
+        static constexpr Int32 ASGroupSize = 64; // max 1024
     
         Uint32                 m_DrawTaskCount = 0;
         Uint32                 m_DepthPassDrawTaskCount = 0;
@@ -131,6 +131,7 @@ namespace Diligent
         Uint32      m_VisibleCubes   = 0;
         Uint32      m_VisibleOTNodes = 0;
         bool        m_UseLight       = true;
+        float       m_OCThreshold    = 1.0f;
     
         OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;
     };

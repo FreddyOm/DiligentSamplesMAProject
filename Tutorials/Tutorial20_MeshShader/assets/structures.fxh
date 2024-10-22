@@ -41,8 +41,9 @@ struct Constants
     
     uint ShowOnlyBestOccluders; // 4
     uint UseLight;              // 4
+    float OCThreshold;          // 4
     
-    uint2 Padding;              // 8
+    uint Padding;               // 4
 };
 
 // Payload size must be less than 16kb.

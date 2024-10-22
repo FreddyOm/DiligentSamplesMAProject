@@ -26,7 +26,7 @@ cbuffer cbConstants : register(b0)
 // Payload will be used in the mesh shader.
 groupshared Payload s_Payload;
 
-bool IsVisible(float4 basePosAndScale)
+bool IsInCameraFrustum(float4 basePosAndScale)
 {
     float4 center = float4(basePosAndScale.xyz, 1.0f);
     float radius = 0.71f * abs(basePosAndScale.z);   // => diagonal (center-max point) = sqrt(2) * half_width / 4.0f | => 1/2 sqrt(2) * half_width
@@ -39,34 +39,62 @@ bool IsVisible(float4 basePosAndScale)
     return true;
 }
 
-// HiZ occlusion culling
-bool IsOccluded(float3 worldPos, float radius)
+float LinearToNonLinearDepth(float linearDepth, float near, float far)
 {
-    float4 clipPos = mul(float4(worldPos, 1.0), g_Constants.ViewProjMat);
+    float nonLinearDepth = (near * far) / (far - linearDepth * (far - near));
+    return nonLinearDepth;
+}
+
+float NormalizedNonLinearDepth(float linearDepth, float near, float far)
+{
+    float nonLinearDepth = LinearToNonLinearDepth(linearDepth, near, far);
+    return (nonLinearDepth - near) / (far - near);
+}
+
+// HiZ occlusion culling
+bool IsVisible(float4 worldPosAndScale)
+{
+    float4 clipPos = mul(float4(worldPosAndScale.xyz, 1.0), g_Constants.ViewProjMat);
     float2 screenPos = clipPos.xy / clipPos.w * float2(0.5, -0.5) + 0.5;
     
-    float depth = clipPos.z / clipPos.w;
-    float minDepth = depth - radius;
-    float maxDepth = depth + radius;
+    float linearDepth = clipPos.z / clipPos.w;
+    
+    // Adjust radius for depth
+    float depthScale = abs(g_Constants.ViewProjMat[2][2]);
+    float radiusInDepth = worldPosAndScale.w /** depthScale*/ / clipPos.w;
+    
+    float minDepth = max(0.0, linearDepth - radiusInDepth);
+    float maxDepth = min(1.0, linearDepth + radiusInDepth);
     
     uint numLevels = 1; // At least one mip level is assumed
-    //HiZPyramid.GetDimensions(0, 0, 0, numLevels);
-
-    for (uint mipLevel = 0; mipLevel < numLevels; ++mipLevel)
+    uint outVar;
+    HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
+    
+    for (uint mipLevel = numLevels - 3; mipLevel > 0; --mipLevel)
     {
+        // Store the nearest / farthers 4 bounding vertices from the BB
+        float4 boundingBoxVertices = float4(min(1,1), min(1,1), min(1,1), min(1,1)); 
+        
+        
         float2 mipSize;
         HiZPyramid.GetDimensions(mipLevel, mipSize.x, mipSize.y, numLevels);
         float2 uv = screenPos * mipSize;
-        float hiZDepth = HiZPyramid.SampleLevel(HiZPyramid_sampler, uv, mipLevel).r;
+        float hiZNonLinearDepth = HiZPyramid.SampleLevel(HiZPyramid_sampler, uv, mipLevel).r;   // compare bounding box
 
-        if (maxDepth < hiZDepth)
-            return true; // Culled
+        if (maxDepth < hiZNonLinearDepth)
+            return false; // Culled (object is behind the HiZ depth)
 
-        if (minDepth > hiZDepth)
-            return false; // Visible
+        if (minDepth > hiZNonLinearDepth)
+            return true; // Visible (object is in front of the HiZ depth)
+        
+        //if (maxDepth < g_Constants.OCThreshold)
+        //    return false; // Culled (object is behind the HiZ depth)
+
+        //if (minDepth > g_Constants.OCThreshold)
+        //    return true; // Visible (object is in front of the HiZ depth)
     }
 
-    return false; // Visible if we've gone through all mip levels
+    return true; // Visible if we've gone through all mip levels
 }
 
 // The number of cubes that are visible by the camera,
@@ -101,14 +129,14 @@ void main(in uint I  : SV_GroupIndex,
     int padding = (int) node.RandomValue.z;
     
     
-        //&& !IsOccluded(VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale.xyz, VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale.w * 1.41)
     // Access node indices for each thread 
-    if ((g_Constants.FrustumCulling == 0 || IsVisible(node.BasePosAndScale)) // frustum culling
-        && I < node.VoxelBufDataCount && (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount == 64)) // only draw valid voxels
+    if ((g_Constants.FrustumCulling == 0 || IsInCameraFrustum(node.BasePosAndScale)) // frustum culling
+        && I < node.VoxelBufDataCount //&& IsVisible(VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale) // occlusion culling
+        && (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount == GROUP_SIZE)) // only draw valid voxels
     {
         VoxelBufData voxel  = VoxelPositionBuffer[node.VoxelBufStartIndex + I];
         float3 pos          = voxel.BasePosAndScale.xyz;
-        float scale = voxel.BasePosAndScale.w;
+        float scale         = voxel.BasePosAndScale.w;
         
         // Atomically increase task count
         uint index = 0;

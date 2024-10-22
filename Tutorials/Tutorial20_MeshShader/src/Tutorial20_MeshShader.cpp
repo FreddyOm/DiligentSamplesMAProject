@@ -240,7 +240,7 @@ namespace Diligent
         BinvoxData data = read_binvox(OTmodelPath);
 
         AABB worldBounds       = {{0, 0, 0}, {(float)data.width, (float)data.height, (float)data.depth}};
-        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds);
+        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds, ASGroupSize);
 
         for (int z = 0; z < data.depth; ++z)
         {
@@ -786,9 +786,13 @@ namespace Diligent
             ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
             ImGui::Checkbox("Enable Light", &m_UseLight);
 
+            ImGui::SliderFloat("OC Threshold", &m_OCThreshold, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::Spacing();
+
             if (ImGui::Button("Reset Camera"))
             {
-                fpc.SetPos({0, 5, 0});
+                fpc.SetPos({80, 130, -310});
+                fpc.SetRotation(0, 0);
             }
             ImGui::Text("Visible cubes: %d", m_VisibleCubes);
             ImGui::Text("Visible octree nodes: %d", m_VisibleOTNodes);
@@ -853,6 +857,7 @@ namespace Diligent
             CBConstants->MSDebugViz             = m_MSDebugViz ? 1.0f : 0.0f;
             CBConstants->OctreeDebugViz         = m_OTDebugViz ? 1.0f : 0.0f;
             CBConstants->UseLight               = m_UseLight ? 1 : 0;
+            CBConstants->OCThreshold            = m_OCThreshold;
     
             // Calculate frustum planes from view-projection matrix.
             if (m_SyncCamPosition)
@@ -945,7 +950,7 @@ namespace Diligent
         auto SrfPreTransform = GetSurfacePretransformMatrix(float3{0, 0, 1});
     
         // Get projection matrix adjusted to the current screen orientation
-        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 0.01f, 1000.f);
+        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 10.f, 500.f);
     
         // Compute view and view-projection matrices
         m_ViewMatrix = View * SrfPreTransform;
