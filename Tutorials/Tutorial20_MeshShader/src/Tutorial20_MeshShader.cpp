@@ -53,6 +53,15 @@ namespace Diligent
         {
             Uint32 visibleCubes;
             Uint32 visibleOctreeNodes;
+            float  hiZSampleValue;
+            float  minZValue;
+
+            float4 debugFloat4_1;
+            float4 debugFloat4_2;
+
+            Uint32 mipCount;
+            Uint32 padding;
+
         };
         
         static_assert(sizeof(OctreeLeafNode) % 16 == 0, "Structure must be 16-byte aligned");
@@ -381,7 +390,7 @@ namespace Diligent
         {
             ShaderCI.Desc.ShaderType = SHADER_TYPE_AMPLIFICATION;
             ShaderCI.EntryPoint      = "main";
-            ShaderCI.Desc.Name       = "Mesh shader - AS";
+            ShaderCI.Desc.Name       = "Amplification shader - AS";
             ShaderCI.FilePath        = "cube_ash.hlsl";
     
             m_pDevice->CreateShader(ShaderCI, &pAS);
@@ -467,9 +476,6 @@ namespace Diligent
 
         if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid"))
             m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid")->Set(m_pHiZPyramidTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
-
-        if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "pointSampler"))
-            m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "pointSampler")->Set(m_pHiZSampler);
 
         if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants"))
             m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants")->Set(m_pConstants);
@@ -642,6 +648,7 @@ namespace Diligent
         storeDepthBufAttribs.pDstTexture              = m_pHiZPyramidTexture;
         storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
         storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+        storeDepthBufAttribs.DstMipLevel              = 0;
 
         m_pImmediateContext->CopyTexture(storeDepthBufAttribs);
 
@@ -716,11 +723,10 @@ namespace Diligent
     {
         StateTransitionDesc HiZResourceBarrier;
         HiZResourceBarrier.pResource      = m_pHiZPyramidTexture;
-        HiZResourceBarrier.OldState       = RESOURCE_STATE_UNKNOWN;
-        HiZResourceBarrier.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
+        HiZResourceBarrier.OldState       = RESOURCE_STATE_COPY_DEST;
+        HiZResourceBarrier.NewState       = RESOURCE_STATE_SHADER_RESOURCE;
         HiZResourceBarrier.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
         HiZResourceBarrier.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-
         m_pImmediateContext->TransitionResourceStates(1, &HiZResourceBarrier);
 
         // Set pipeline state and commit shader resources
@@ -744,10 +750,6 @@ namespace Diligent
             
             // Early exit when GroupsX or GroupsY become 0
             if ((std::max)(GroupsX, GroupsY) == 0) break;
-            
-            // Set the input and  output shader resources
-            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_HiZMipSRVs[mipLevel - 1]);
-            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "OutputTexture")->Set(m_HiZMipUAVs[mipLevel]);
 
             // Update const buffer data and map data to GPU memory
             {
@@ -757,9 +759,37 @@ namespace Diligent
                 Constants->Level            = mipLevel;
             }
 
+            {
+                StateTransitionDesc ReadTransition;
+                ReadTransition.pResource      = m_pHiZPyramidTexture;
+                ReadTransition.OldState       = RESOURCE_STATE_UNKNOWN;
+                ReadTransition.NewState       = RESOURCE_STATE_SHADER_RESOURCE;
+                ReadTransition.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+                ReadTransition.FirstMipLevel  = mipLevel - 1;
+                ReadTransition.MipLevelsCount = 1;
+                ReadTransition.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+                m_pImmediateContext->TransitionResourceStates(1, &ReadTransition);
+            }
+
+             // Set the input and  output shader resources
+            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_HiZMipSRVs[mipLevel - 1]);
             m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "Constants")->Set(m_pHiZConstantBuffer);
+            m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);            
             
-            m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            {
+                StateTransitionDesc WriteTransition;
+                WriteTransition.pResource      = m_pHiZPyramidTexture;
+                WriteTransition.OldState       = RESOURCE_STATE_UNKNOWN;
+                WriteTransition.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
+                WriteTransition.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+                WriteTransition.FirstMipLevel  = mipLevel;
+                WriteTransition.MipLevelsCount = 1;
+                WriteTransition.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+                m_pImmediateContext->TransitionResourceStates(1, &WriteTransition);
+            }
+
+            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "OutputTexture")->Set(m_HiZMipUAVs[mipLevel]);
+            m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);
 
             // Dispatch compute shader
             DispatchComputeAttribs dispatchAttribs(GroupsX, GroupsY, 1);
@@ -767,8 +797,14 @@ namespace Diligent
         }
 
         // Transition to unordered access
-        HiZResourceBarrier.NewState = RESOURCE_STATE_SHADER_RESOURCE;
-        m_pImmediateContext->TransitionResourceStates(1, &HiZResourceBarrier);
+        StateTransitionDesc HiZResourceBarrier2;
+        HiZResourceBarrier2.pResource      = m_pHiZPyramidTexture;
+        HiZResourceBarrier2.OldState       = RESOURCE_STATE_UNKNOWN;
+        HiZResourceBarrier2.NewState       = RESOURCE_STATE_SHADER_RESOURCE;
+        HiZResourceBarrier2.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
+        HiZResourceBarrier2.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
+        m_pImmediateContext->TransitionResourceStates(1, &HiZResourceBarrier2);
+        m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);
 
         // Flush the context to ensure all commands are executed
         m_pImmediateContext->Flush();
@@ -786,7 +822,7 @@ namespace Diligent
             ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
             ImGui::Checkbox("Enable Light", &m_UseLight);
 
-            ImGui::SliderFloat("OC Threshold", &m_OCThreshold, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("OC Threshold", &m_OCThreshold, -1.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::Spacing();
 
             if (ImGui::Button("Reset Camera"))
@@ -794,8 +830,17 @@ namespace Diligent
                 fpc.SetPos({80, 130, -310});
                 fpc.SetRotation(0, 0);
             }
+
+            ImGui::Spacing();
+
             ImGui::Text("Visible cubes: %d", m_VisibleCubes);
             ImGui::Text("Visible octree nodes: %d", m_VisibleOTNodes);
+            ImGui::Text("MinZ Value: %f", m_MinZValue);
+            ImGui::Text("HiZ Sample Value: %f", m_HiZSampleValue);
+            ImGui::Text("MipCount: %d", m_MipCount);
+
+            ImGui::Text("Debug f4 1: [%f, %f, %f, %f]", m_DebugFloat4_1.x, m_DebugFloat4_1.y, m_DebugFloat4_1.z, m_DebugFloat4_1.w);
+            ImGui::Text("Debug f4 2: [%f, %f, %f, %f]", m_DebugFloat4_2.x, m_DebugFloat4_2.y, m_DebugFloat4_2.z, m_DebugFloat4_2.w);
 
         }
         ImGui::End();
@@ -857,8 +902,9 @@ namespace Diligent
             CBConstants->MSDebugViz             = m_MSDebugViz ? 1.0f : 0.0f;
             CBConstants->OctreeDebugViz         = m_OTDebugViz ? 1.0f : 0.0f;
             CBConstants->UseLight               = m_UseLight ? 1 : 0;
+            CBConstants->ViewportSize           = float2((float)pDSV->GetTexture()->GetDesc().Width, (float)pDSV->GetTexture()->GetDesc().Height);
             CBConstants->OCThreshold            = m_OCThreshold;
-    
+
             // Calculate frustum planes from view-projection matrix.
             if (m_SyncCamPosition)
                 ExtractViewFrustumPlanesFromMatrix(m_ViewProjMatrix, Frustum, false);
@@ -925,6 +971,11 @@ namespace Diligent
                 {
                     m_VisibleCubes = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleCubes;
                     m_VisibleOTNodes = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleOctreeNodes;
+                    m_HiZSampleValue = StagingData[AvailableFrameId % m_StatisticsHistorySize].hiZSampleValue;
+                    m_MinZValue      = StagingData[AvailableFrameId % m_StatisticsHistorySize].minZValue;
+                    m_DebugFloat4_1  = StagingData[AvailableFrameId % m_StatisticsHistorySize].debugFloat4_1;
+                    m_DebugFloat4_2  = StagingData[AvailableFrameId % m_StatisticsHistorySize].debugFloat4_2;
+                    m_MipCount       = StagingData[AvailableFrameId % m_StatisticsHistorySize].mipCount;
                 }
             }
     

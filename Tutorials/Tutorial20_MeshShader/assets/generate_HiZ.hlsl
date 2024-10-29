@@ -26,7 +26,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     float z3 = InputTexture.Load(int3(min(InputPos + uint2(0, 1), InputDimensions - 1), 0));
     float z4 = InputTexture.Load(int3(min(InputPos + uint2(1, 1), InputDimensions - 1), 0));
 
-    // Find the maximum Z value (assuming reverse Z)
+    // Find the maximum Z value (assuming reverse Z -> nearest z value)
     float maxZ = max(max(z1, z2), max(z3, z4));
 
     // Write the result

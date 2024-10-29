@@ -83,15 +83,19 @@ namespace Diligent
     
         static constexpr Int32 ASGroupSize = 64; // max 1024
     
-        Uint32                 m_DrawTaskCount = 0;
+        Uint32                 m_DrawTaskCount          = 0;
         Uint32                 m_DepthPassDrawTaskCount = 0;
+        float                  m_HiZSampleValue         = 0.f;
+        float                  m_MinZValue              = 0.f;
+        Uint32                 m_MipCount               = 0;
+        float4                 m_DebugFloat4_1;
+        float4                 m_DebugFloat4_2;
 
         RefCntAutoPtr<IBuffer> m_pVoxelPosBuffer;
         RefCntAutoPtr<IBuffer> m_pBestOccluderBuffer;
         RefCntAutoPtr<IBuffer> m_pOctreeNodeBuffer;
         RefCntAutoPtr<IBuffer> m_pConstants;
 
-        RefCntAutoPtr<ISampler>                  m_pHiZSampler; 
         RefCntAutoPtr<ITexture>                  m_pHiZPyramidTexture;
         std::vector<RefCntAutoPtr<ITextureView>> m_HiZMipUAVs;
         std::vector<RefCntAutoPtr<ITextureView>> m_HiZMipSRVs;
@@ -131,7 +135,7 @@ namespace Diligent
         Uint32      m_VisibleCubes   = 0;
         Uint32      m_VisibleOTNodes = 0;
         bool        m_UseLight       = true;
-        float       m_OCThreshold    = 1.0f;
+        float       m_OCThreshold    = 0.0f;
     
         OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;
     };
