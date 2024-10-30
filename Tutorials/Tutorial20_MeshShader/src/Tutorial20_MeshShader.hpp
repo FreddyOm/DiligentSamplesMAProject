@@ -98,7 +98,6 @@ namespace Diligent
 
         RefCntAutoPtr<ITexture>                  m_pHiZPyramidTexture;
         std::vector<RefCntAutoPtr<ITextureView>> m_HiZMipUAVs;
-        std::vector<RefCntAutoPtr<ITextureView>> m_HiZMipSRVs;
 
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;

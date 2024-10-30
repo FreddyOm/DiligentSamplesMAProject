@@ -1,5 +1,5 @@
-Texture2D<float> InputTexture : register(t0);
-RWTexture2D<float> OutputTexture : register(u0);
+RWTexture2D<float> InputTexture : register(u0);
+RWTexture2D<float> OutputTexture : register(u1);
 
 cbuffer Constants : register(b0)
 {
@@ -21,10 +21,10 @@ void main(uint3 DTid : SV_DispatchThreadID)
     uint2 InputPos = DTid.xy * 2;
 
     // Sample four texels from the input texture
-    float z1 = InputTexture.Load(int3(InputPos, 0));
-    float z2 = InputTexture.Load(int3(min(InputPos + uint2(1, 0), InputDimensions - 1), 0));
-    float z3 = InputTexture.Load(int3(min(InputPos + uint2(0, 1), InputDimensions - 1), 0));
-    float z4 = InputTexture.Load(int3(min(InputPos + uint2(1, 1), InputDimensions - 1), 0));
+    float z1 = InputTexture[InputPos];
+    float z2 = InputTexture[min(InputPos + uint2(1, 0), InputDimensions - 1)];
+    float z3 = InputTexture[min(InputPos + uint2(0, 1), InputDimensions - 1)];
+    float z4 = InputTexture[min(InputPos + uint2(1, 1), InputDimensions - 1)];
 
     // Find the maximum Z value (assuming reverse Z -> nearest z value)
     float maxZ = max(max(z1, z2), max(z3, z4));

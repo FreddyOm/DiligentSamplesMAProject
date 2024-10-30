@@ -58,7 +58,7 @@ float2 GetNDCMinPos(float4 clipMinMaxValues, float perspectiveDivide)
 }
 
 // Get themminium Z value, the minimum bound vertex poitions, and the perspectiveDivide for the given Z value
-float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY, out float perspectiveDivide)        // @TODO: check if scale or scale * 0.5f
+float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY, out float perspectiveDivide, out float4 dF41)        // @TODO: check if scale or scale * 0.5f
 {
     float3 basePos = BasePosAndScale.xyz;
     float scale = BasePosAndScale.w * 0.5;
@@ -77,6 +77,8 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY, out
         basePos + float3(scale, scale, -scale),
         basePos + float3(scale, scale, scale)
     );
+    
+    dF41.xyz = corners1[0];
     
     // Transform first batch
     float4 clipPos1 = mul(float4(corners1[0].xyz, 1.0), g_Constants.ViewProjMat);
@@ -116,7 +118,7 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY, out
     
     perspectiveDivide = (minZ2 < minZ) ? w2 : w1; 
     
-    return min(minZ, minZ2);;
+    return min(minZ, minZ2);
 }
 
 // HiZ occlusion culling in linear ndc space
@@ -128,65 +130,48 @@ bool IsVisible(float4 worldPosAndScale, out float HiZDepthVal, out float MinZ, o
     // Calculate min Z value of the transformed bounding box
     float4 clipPosVertices = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
     float perspectiveDivide = 0.f;
-    float minZ = GetMinBoundVertex(worldPosAndScale, clipPosVertices, perspectiveDivide);
+    float minZ = GetMinBoundVertex(worldPosAndScale, clipPosVertices, perspectiveDivide, dF41);
     
     minZ /= perspectiveDivide;
     MinZ = minZ;
     
-    // Transform clip space bounds of this voxel / node to ndc position of min 
-    float2 ndcQuadOrigin = GetNDCMinPos(clipPosVertices, perspectiveDivide);
+    dF42 = worldPosAndScale;
+    //dF41 = worldPosAndScale;
     
-    // Calculate the longer side of the projected bounding box and transform it into ndc.
-    float2 clipSpaceQuadLength = float2(distance(clipPosVertices.x, clipPosVertices.y), distance(clipPosVertices.z, clipPosVertices.w));
+    // Keep in mind, that maxY will be minY and the other way around, since clip space Y begins at the lower end of the screen,
+    // and screen space begins at the upper end of the screen
+    float2 upperLeftBounding    = ClipSpaceToNDC(float4(clipPosVertices.x, clipPosVertices.w, 0.0f, perspectiveDivide)).xy;
+    float2 upperRightBounding   = ClipSpaceToNDC(float4(clipPosVertices.y, clipPosVertices.w, 0.0f, perspectiveDivide)).xy;
+    float2 lowerLeftBounding    = ClipSpaceToNDC(float4(clipPosVertices.x, clipPosVertices.z, 0.0f, perspectiveDivide)).xy;
+    float2 lowerRightBounding   = ClipSpaceToNDC(float4(clipPosVertices.y, clipPosVertices.z, 0.0f, perspectiveDivide)).xy;
     
-    // Transform quad length to ndc
-    float2 ndcQuadSizeLen = clipSpaceQuadLength / perspectiveDivide;
+    //dF42 = float4(upperLeftBounding, lowerRightBounding);
     
-    // Get the longer side of the quad in ndc
-    float ndcLength = max(ndcQuadSizeLen.x, ndcQuadSizeLen.y);
-    // Now I have a ndc position which is the upper left position of my minZ-quad and a ndc length which 
-    // I can add onto the positions x- and y-axis to form a quad which completely covers my objects bounding boxes
+    // Now I have four ndc positions which are the corner positions of my minZ-rect
     
     // Convert NDC coordinates to UV space [0,1]
-    float2 uvOrigin = float2(ndcQuadOrigin.x * 0.5 + 0.5, ndcQuadOrigin.y * -0.5 + 0.5);
-    float uvLength = ndcLength * 0.5; // Scale from NDC to UV
+    float2 upperLeftBoundingUV = float2(upperLeftBounding.x * 0.5 + 0.5, upperLeftBounding.y * -0.5 + 0.5);
+    float2 upperRightBoundingUV = float2(upperRightBounding.x * 0.5 + 0.5, upperRightBounding.y * -0.5 + 0.5);
+    float2 lowerLeftBoundingUV = float2(lowerLeftBounding.x * 0.5 + 0.5, lowerLeftBounding.y * -0.5 + 0.5);
+    float2 lowerRightBoundingUV = float2(lowerRightBounding.x * 0.5 + 0.5, lowerRightBounding.y * -0.5 + 0.5);
     
+    //dF41 = float4(upperLeftBoundingUV, lowerRightBoundingUV);
     
     uint numLevels = 1; // At least one mip level is assumed
     uint outVar;
-    HiZPyramid.GetDimensions(outVar, dF41.x, dF41.y, numLevels);
+    HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
     mipCount = numLevels;
     
     for (uint mipLevel = numLevels - 5; mipLevel > 0; --mipLevel)
-    {
-        float2 mipSize;
-        HiZPyramid.GetDimensions(mipLevel, mipSize.x, mipSize.y, numLevels);
-         
-        // Calculate how many pixels our quad covers in this mip level in one dimension
-        uint pixelWidth = max(min(ceil(uvLength * mipSize.x), mipSize.x), 1);
-        dF41.z = pixelWidth;
+    {            
+        float hiZDepthUL = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, upperLeftBoundingUV, mipLevel).r; // compare bounding box
+        float hiZDepthUR = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, upperRightBoundingUV, mipLevel).r;
+        float hiZDepthLL = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, lowerLeftBoundingUV, mipLevel).r;
+        float hiZDepthLR = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, lowerRightBoundingUV, mipLevel).r;
         
-        bool anyPixelVisble = false;
-        // Go over all pixels in the quad and sample the linear depth from the HiZ
-        for (uint totalPixels = 0; totalPixels < max(pixelWidth * pixelWidth, 1); ++totalPixels)
-        {
-             // Convert linear index to 2D offsets in [0,1] range
-            float2 offset = float2(totalPixels % pixelWidth, totalPixels / pixelWidth) / float(pixelWidth);
-            float2 sampleUV = clamp(uvOrigin + offset * uvLength, 0, 1);
-            dF42.xy = offset;
-            dF42.zw = sampleUV;
-            
-            float hiZDepth = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, sampleUV, mipLevel).r; // compare bounding box
-            HiZDepthVal = hiZDepth;
-            
-            if (minZ < hiZDepth)  // Bounding box z value is lower than z-pyramids z value at sampleUV
-            {
-                anyPixelVisble = true;  // At least 1 pixel sampled is not occluded by value in z-pyramid 
-                break;                  //-> break and use lower mip level for next check
-            }
-        }
+        //dF42 = float4(hiZDepthUL, hiZDepthUR, hiZDepthLL, hiZDepthLR);
         
-        if (!anyPixelVisble)    // No bounding box z value was lower than z-pyramids z value -> fully occluded
+        if (max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR)) < minZ)    // No bounding box z value was lower than z-pyramids z value -> fully occluded
             return false;       // Return: is not visible
     }
 

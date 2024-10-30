@@ -662,7 +662,6 @@ namespace Diligent
             m_pHiZPyramidTexture.Release();
 
         m_HiZMipUAVs.clear();
-        m_HiZMipSRVs.clear();
 
         const uint32_t BaseWidth  = m_pSwapChain->GetDesc().Width;
         const uint32_t BaseHeight = m_pSwapChain->GetDesc().Height;
@@ -678,7 +677,7 @@ namespace Diligent
         HiZTexDesc.Height    = BaseHeight;
         HiZTexDesc.Format    = TEX_FORMAT_R32_FLOAT;
         HiZTexDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-        HiZTexDesc.Usage     = USAGE_DEFAULT;
+        HiZTexDesc.Usage     = USAGE_DYNAMIC;
         HiZTexDesc.MipLevels = MipLevelCount;
 
         m_pDevice->CreateTexture(HiZTexDesc, nullptr, &m_pHiZPyramidTexture);
@@ -686,7 +685,6 @@ namespace Diligent
 
         // Create UAVs and SRVs for each mip level
         m_HiZMipUAVs.resize(MipLevelCount);
-        m_HiZMipSRVs.resize(MipLevelCount);
 
         for (uint32_t mip = 0; mip < MipLevelCount; ++mip)
         {
@@ -697,14 +695,6 @@ namespace Diligent
             UAVDesc.NumMipLevels    = 1;
             m_pHiZPyramidTexture->CreateView(UAVDesc, &m_HiZMipUAVs[mip]);
             VERIFY_EXPR(m_HiZMipUAVs[mip] != nullptr);
-
-            TextureViewDesc SRVDesc;
-            SRVDesc.ViewType        = TEXTURE_VIEW_SHADER_RESOURCE;
-            SRVDesc.TextureDim      = RESOURCE_DIM_TEX_2D;
-            SRVDesc.MostDetailedMip = mip;
-            SRVDesc.NumMipLevels    = 1;
-            m_pHiZPyramidTexture->CreateView(SRVDesc, &m_HiZMipSRVs[mip]);
-            VERIFY_EXPR(m_HiZMipSRVs[mip] != nullptr);
         }
         
         StateTransitionDesc HiZTexBarrier{};
@@ -724,7 +714,7 @@ namespace Diligent
         StateTransitionDesc HiZResourceBarrier;
         HiZResourceBarrier.pResource      = m_pHiZPyramidTexture;
         HiZResourceBarrier.OldState       = RESOURCE_STATE_COPY_DEST;
-        HiZResourceBarrier.NewState       = RESOURCE_STATE_SHADER_RESOURCE;
+        HiZResourceBarrier.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
         HiZResourceBarrier.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
         HiZResourceBarrier.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
         m_pImmediateContext->TransitionResourceStates(1, &HiZResourceBarrier);
@@ -758,38 +748,13 @@ namespace Diligent
                 Constants->OutputDimensions = uint2(OutputWidth, OutputHeight);
                 Constants->Level            = mipLevel;
             }
-
-            {
-                StateTransitionDesc ReadTransition;
-                ReadTransition.pResource      = m_pHiZPyramidTexture;
-                ReadTransition.OldState       = RESOURCE_STATE_UNKNOWN;
-                ReadTransition.NewState       = RESOURCE_STATE_SHADER_RESOURCE;
-                ReadTransition.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-                ReadTransition.FirstMipLevel  = mipLevel - 1;
-                ReadTransition.MipLevelsCount = 1;
-                ReadTransition.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-                m_pImmediateContext->TransitionResourceStates(1, &ReadTransition);
-            }
-
-             // Set the input and  output shader resources
-            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_HiZMipSRVs[mipLevel - 1]);
-            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "Constants")->Set(m_pHiZConstantBuffer);
-            m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);            
             
-            {
-                StateTransitionDesc WriteTransition;
-                WriteTransition.pResource      = m_pHiZPyramidTexture;
-                WriteTransition.OldState       = RESOURCE_STATE_UNKNOWN;
-                WriteTransition.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
-                WriteTransition.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-                WriteTransition.FirstMipLevel  = mipLevel;
-                WriteTransition.MipLevelsCount = 1;
-                WriteTransition.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-                m_pImmediateContext->TransitionResourceStates(1, &WriteTransition);
-            }
-
+             // Set the input and  output shader resources
+            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_HiZMipUAVs[mipLevel - 1]);
+            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "Constants")->Set(m_pHiZConstantBuffer);
             m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "OutputTexture")->Set(m_HiZMipUAVs[mipLevel]);
-            m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);
+
+            m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
             // Dispatch compute shader
             DispatchComputeAttribs dispatchAttribs(GroupsX, GroupsY, 1);
@@ -800,7 +765,7 @@ namespace Diligent
         StateTransitionDesc HiZResourceBarrier2;
         HiZResourceBarrier2.pResource      = m_pHiZPyramidTexture;
         HiZResourceBarrier2.OldState       = RESOURCE_STATE_UNKNOWN;
-        HiZResourceBarrier2.NewState       = RESOURCE_STATE_SHADER_RESOURCE;
+        HiZResourceBarrier2.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
         HiZResourceBarrier2.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
         HiZResourceBarrier2.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
         m_pImmediateContext->TransitionResourceStates(1, &HiZResourceBarrier2);
@@ -841,7 +806,6 @@ namespace Diligent
 
             ImGui::Text("Debug f4 1: [%f, %f, %f, %f]", m_DebugFloat4_1.x, m_DebugFloat4_1.y, m_DebugFloat4_1.z, m_DebugFloat4_1.w);
             ImGui::Text("Debug f4 2: [%f, %f, %f, %f]", m_DebugFloat4_2.x, m_DebugFloat4_2.y, m_DebugFloat4_2.z, m_DebugFloat4_2.w);
-
         }
         ImGui::End();
     }
@@ -872,7 +836,6 @@ namespace Diligent
         CreatePipelineState();
     }
     
-    // Render a frame
     void Tutorial20_MeshShader::Render()
     {
         auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
