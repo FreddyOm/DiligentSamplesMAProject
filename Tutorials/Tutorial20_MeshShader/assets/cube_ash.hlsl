@@ -145,7 +145,7 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
         
         float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));        
         
-        if (maxHiZDepth + g_Constants.OCThreshold <= minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
+        if (maxHiZDepth + g_Constants.OCThreshold < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
             return false;            // Return: is not visible
     }
     
