@@ -44,7 +44,9 @@ struct Constants
     float2 ViewportSize;        // 8    
     
     float OCThreshold;          // 4
-    float3 padding;             // 12
+    uint OcclusionCulling;      // 4
+    uint CullMode;              // 4
+    uint padding;               // 4
 };
 
 // Payload size must be less than 16kb.

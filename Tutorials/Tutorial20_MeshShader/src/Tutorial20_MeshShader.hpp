@@ -133,6 +133,8 @@ namespace Diligent
         Uint32      m_VisibleOTNodes = 0;
         bool        m_UseLight       = true;
         float       m_OCThreshold    = 0.0f;
+        bool        m_OcclusionCulling = true;
+        int         m_CullMode       = 0;
     
         OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;
     };

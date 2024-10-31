@@ -7,7 +7,7 @@
 #include "../DrawTask.h"
 #include "aabb.h"
 
-extern std::vector<VoxelOC::OctreeLeafNode> OTVoxelBoundBuffer;
+extern std::vector<AABB> OTVoxelBoundBuffer;
 
 bool          IntersectAABBAABB(const AABB& first, const AABB& second);
 bool          IntersectAABBPoint(const AABB& first, const DirectX::XMFLOAT3& second);
@@ -24,11 +24,11 @@ public:
     AABB   rootBounds = {};
     size_t gridSize = 0;
 
-    std::vector<VoxelOC::OctreeLeafNode>& nodeBuffer;
+    std::vector<AABB>& nodeBuffer;
     std::array<OctreeNode*, 8> children              = {};
     std::vector<size_t>        objectIndices         = {};
 
-    OctreeNode(const AABB& bounds, std::vector<VoxelOC::OctreeLeafNode>& nodeBuffer, size_t gridSize, AABB rootBounds, unsigned int maxObjectsPerLeaf = 64) :
+    OctreeNode(const AABB& bounds, std::vector<AABB>& nodeBuffer, size_t gridSize, AABB rootBounds, unsigned int maxObjectsPerLeaf = 64) :
         bounds(bounds), maxObjectsPerLeaf(maxObjectsPerLeaf), isLeaf(true), nodeBuffer(nodeBuffer), gridSize(gridSize), rootBounds(rootBounds)
     {
         children.fill(nullptr);
@@ -63,8 +63,9 @@ public:
         ocNode.VoxelBufStartIndex = static_cast<int>(orderedVoxelDataBuf.size());
         ocNode.VoxelBufIndexCount = static_cast<int>(objectIndices.size());
         ocNode.BasePosAndScale    = bounds.CenterAndScale();
-        
-        // @TODO: Check if it can be adventageous to treat nodes in a tree fashion and collaps full nodes to a full parent node!
+
+        VERIFY_EXPR(ocNode.VoxelBufIndexCount <= ocNode.BasePosAndScale.w * ocNode.BasePosAndScale.w * ocNode.BasePosAndScale.w);
+
         if (objectIndices.size() > 0)       // Only insert nodes which actually store voxels. Makes it easier to iterate in depth pre-pass
             octreeNodeBuffer.push_back(std::move(ocNode));
 
@@ -74,7 +75,9 @@ public:
             if (duplicateBuffer[objectIndices[index]] == 0)
             {
                 VoxelOC::VoxelBufData voxelData;
-                voxelData.BasePosAndScale = OTVoxelBoundBuffer[objectIndices[index]].BasePosAndScale;
+                voxelData.BasePosAndScale = OTVoxelBoundBuffer[objectIndices[index]].CenterAndScale();
+                
+                VERIFY_EXPR(voxelData.BasePosAndScale.w == 1);
 
                 orderedVoxelDataBuf.push_back(std::move(voxelData));
                 duplicateBuffer[objectIndices[index]] = 1;
@@ -92,7 +95,7 @@ public:
                 if (children[i]->IsFull())
                 {
                     VoxelOC::DepthPrepassDrawTask drawTask{};
-                    drawTask.BasePositionAndScale = bounds.CenterAndScale();
+                    drawTask.BasePositionAndScale = children[i]->bounds.CenterAndScale();
                     depthPrepassOTNodes.push_back(std::move(drawTask));
                     continue;
                 }
@@ -105,6 +108,8 @@ public:
     void SplitNode()
     {
         if (!isLeaf) return;
+
+        VERIFY_EXPR(bounds.max.x - bounds.min.x >= 4);
 
         DirectX::XMFLOAT3 center = {
                 (bounds.min.x + bounds.max.x) * 0.5f,
@@ -153,6 +158,7 @@ public:
                 }
                 else
                 {
+                    VERIFY_EXPR(currentNode->bounds.CenterAndScale().w >= 4);
                     // Need to split this node
                     currentNode->SplitNode();
 

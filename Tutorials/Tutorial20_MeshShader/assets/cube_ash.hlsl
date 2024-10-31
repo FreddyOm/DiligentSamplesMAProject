@@ -41,21 +41,21 @@ bool IsInCameraFrustum(float4 basePosAndScale)
 float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
 {
     float3 basePos = BasePosAndScale.xyz;
-    float scale = BasePosAndScale.w * 0.5;
+    float halfScale = BasePosAndScale.w * 0.5;
     
     // Create all corner positions at once using vector operations
     float4x3 corners1 = float4x3(
-        basePos + float3(-scale, -scale, -scale),
-        basePos + float3(-scale, -scale, scale),
-        basePos + float3(-scale, scale, -scale),
-        basePos + float3(-scale, scale, scale)
+        basePos + float3(-halfScale, -halfScale, -halfScale),
+        basePos + float3(-halfScale, -halfScale, halfScale),
+        basePos + float3(-halfScale, halfScale, -halfScale),
+        basePos + float3(-halfScale, halfScale, halfScale)
     );
     
     float4x3 corners2 = float4x3(
-        basePos + float3(scale, -scale, -scale),
-        basePos + float3(scale, -scale, scale),
-        basePos + float3(scale, scale, -scale),
-        basePos + float3(scale, scale, scale)
+        basePos + float3(halfScale, -halfScale, -halfScale),
+        basePos + float3(halfScale, -halfScale, halfScale),
+        basePos + float3(halfScale, halfScale, -halfScale),
+        basePos + float3(halfScale, halfScale, halfScale)
     );
     
     // Transform first batch
@@ -105,8 +105,8 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
     if (node.VoxelBufDataCount == 0)    // empty nodes are ignored (can occur due to draw task alignment)
         return false;
     
-    //float4 worldPosAndScale = VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale;
-    float4 worldPosAndScale = node.BasePosAndScale;
+    //                                                      Meshlet                                                         Octree Node
+    float4 worldPosAndScale = g_Constants.CullMode > 0 ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
     
     // Calculate min Z value of the transformed bounding box
     float4 clipPosVertices   = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
@@ -133,7 +133,7 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
     HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
     mipCount = numLevels;
     
-    for (int mipLevel = numLevels - 5; mipLevel >= 0; --mipLevel)
+    for (int mipLevel = max(numLevels - 3, 1); mipLevel >= 0; --mipLevel)
     {
         uint2 texDims;
         HiZPyramid.GetDimensions(mipLevel, texDims.x, texDims.y, outVar);
@@ -143,7 +143,7 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
         float hiZDepthLL = HiZPyramid.Load(float3(uint2(lowerLeftBoundingUV * texDims), mipLevel));
         float hiZDepthLR = HiZPyramid.Load(float3(uint2(lowerRightBoundingUV * texDims), mipLevel));
         
-        float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));        
+        float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
         
         if (maxHiZDepth + g_Constants.OCThreshold < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
             return false;            // Return: is not visible
@@ -199,8 +199,8 @@ void main(in uint I  : SV_GroupIndex,
     cullVoxel += node.VoxelBufDataCount > 0 ? 0 : 1;
     cullVoxel += I < node.VoxelBufDataCount ? 0 : 1;
     cullVoxel += (g_Constants.FrustumCulling == 0 || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += IsVisible(node, I, HZD, MinZ, MipCount) ? 0 : 1;
-    cullVoxel += (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount == GROUP_SIZE) ? 0 : 1;
+    cullVoxel += (g_Constants.OcclusionCulling == 0 || IsVisible(node, I, HZD, MinZ, MipCount)) ? 0 : 1;
+    cullVoxel += (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount >= GROUP_SIZE) ? 0 : 1;
     
     if (cullVoxel == 0) // only draw valid voxels
     {

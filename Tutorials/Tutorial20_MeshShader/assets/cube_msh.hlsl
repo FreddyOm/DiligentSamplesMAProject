@@ -169,7 +169,7 @@ void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader 
     pos.z = payload.PosZ[gid];
     
     // Each thread handles only one vertex
-    verts[I].Pos = mul(float4(pos + constCubePos[I].xyz * scale, 1.0), g_Constants.ViewProjMat);
+    verts[I].Pos = mul(float4(pos + constCubePos[I].xyz * scale * 0.5, 1.0), g_Constants.ViewProjMat);
     verts[I].Normal = mul(float4(constCubeNormals[I], 0.0), g_Constants.ViewProjMat).xyz;
     
     verts[I].UV = constCubeUVs[I].xy;

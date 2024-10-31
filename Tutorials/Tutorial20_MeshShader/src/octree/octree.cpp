@@ -1,23 +1,10 @@
 #include "octree.h"
 
-std::vector<VoxelOC::OctreeLeafNode> OTVoxelBoundBuffer;
+std::vector<AABB> OTVoxelBoundBuffer;
 
 AABB GetVoxelBounds(size_t index)
 {
-    VoxelOC::OctreeLeafNode task = OTVoxelBoundBuffer.at(index);
-
-    DirectX::XMVECTOR voxelSizeOffset = {task.BasePosAndScale.w, task.BasePosAndScale.w, task.BasePosAndScale.w};
-
-    auto minBoundVec = DirectX::XMVectorSubtract({task.BasePosAndScale.x, task.BasePosAndScale.y, task.BasePosAndScale.z}, voxelSizeOffset);
-    auto maxBoundVec = DirectX::XMVectorAdd({task.BasePosAndScale.x, task.BasePosAndScale.y, task.BasePosAndScale.z}, voxelSizeOffset);
-
-    DirectX::XMFLOAT3 minBound;
-    DirectX::XMFLOAT3 maxBound;
-
-    DirectX::XMStoreFloat3(&minBound, minBoundVec);
-    DirectX::XMStoreFloat3(&maxBound, maxBoundVec);
-
-    return {minBound, maxBound};
+    return OTVoxelBoundBuffer.at(index);
 }
 
 /// <summary>

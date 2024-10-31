@@ -41,7 +41,7 @@
 
 #include "binvox/binvox_loader.h"
 
-extern std::vector<VoxelOC::OctreeLeafNode> OTVoxelBoundBuffer;
+extern std::vector<AABB> OTVoxelBoundBuffer;
 
 namespace Diligent
 {
@@ -215,16 +215,27 @@ namespace Diligent
         // Assign some more (debug) data to the draw tasks (= octree leaf nodes)
         FastRandReal<float> Rnd{0, 0.f, 1.f};
 
+#if DILIGENT_DEBUG
+        
+        for (auto& voxPos : orderedVoxelDataBuffer)
+        {
+            VERIFY_EXPR(voxPos.BasePosAndScale.w == 1);
+        }
+
+#endif
+
         for (auto& task : OTLeafNodes)
         {
             task.RandomValue.x = Rnd();
             task.RandomValue.y = 0;
             task.RandomValue.z = 0;
+            VERIFY_EXPR(task.BasePosAndScale.w >= 4);
         }
 
         for (auto& task : depthPrepassOTNodes)
         {
             task.BestOccluderCount = static_cast<int>(depthPrepassOTNodes.size());
+            VERIFY_EXPR(task.BasePositionAndScale.w >= 4);
         }
 
         // Bind buffer resources to GPU
@@ -256,17 +267,9 @@ namespace Diligent
                     size_t index = get_index(x, y, z, data);
                     if (data.voxels[index] > 0)
                     {
-                        AABB                    bounds = {{x - 0.5f, y - 0.5f, z - 0.5f}, {x + 0.5f, y + 0.5f, z + 0.5f}};
-                        VoxelOC::OctreeLeafNode node;
-
-                        node.BasePosAndScale.x = bounds.CenterAndScale().x;
-                        node.BasePosAndScale.y = bounds.CenterAndScale().y;
-                        node.BasePosAndScale.z = bounds.CenterAndScale().z;
-                        node.BasePosAndScale.w = bounds.CenterAndScale().w / 2.0f;
-
-                        OTVoxelBoundBuffer.push_back(std::move(node));
-                        
-                        m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, bounds);
+                        AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
+                        OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+                        m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
                     }
                 }
             }
@@ -787,14 +790,24 @@ namespace Diligent
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::Checkbox("Frustum culling", &m_FrustumCulling);
+            ImGui::Checkbox("Occlusion culling", &m_OcclusionCulling);
             ImGui::Checkbox("Show best occluders only", &m_ShowOnlyBestOccluders);
+            ImGui::SliderFloat("Depth Bias", &m_OCThreshold, 0.0f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
+
+            ImGui::Spacing();
+
+            static const char* items[] = {"Cull Octree Nodes", "Cull Meshlets"};
+            ImGui::Combo("Culling Mode", &m_CullMode, items, IM_ARRAYSIZE(items));
+
+            ImGui::Spacing();
+
             ImGui::Checkbox("MS Debug Visualization", &m_MSDebugViz);
             ImGui::Checkbox("Octree Debug Visualization", &m_OTDebugViz);
+            ImGui::Spacing();
+
             ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
             ImGui::Checkbox("Enable Light", &m_UseLight);
 
-            ImGui::SliderFloat("Depth Bias", &m_OCThreshold, 0.0f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
             ImGui::Spacing();
 
             if (ImGui::Button("Reset Camera"))
@@ -871,6 +884,8 @@ namespace Diligent
             CBConstants->UseLight               = m_UseLight ? 1 : 0;
             CBConstants->ViewportSize           = float2((float)pDSV->GetTexture()->GetDesc().Width, (float)pDSV->GetTexture()->GetDesc().Height);
             CBConstants->OCThreshold            = m_OCThreshold;
+            CBConstants->OcclusionCulling       = m_OcclusionCulling ? 1 : 0;
+            CBConstants->CullMode               = m_CullMode;
 
             // Calculate frustum planes from view-projection matrix.
             if (m_SyncCamPosition)
@@ -969,7 +984,7 @@ namespace Diligent
         auto SrfPreTransform = GetSurfacePretransformMatrix(float3{0, 0, 1});
     
         // Get projection matrix adjusted to the current screen orientation
-        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 10.f, 500.f);
+        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 1.f, 500.f);
     
         // Compute view and view-projection matrices
         m_ViewMatrix = View * SrfPreTransform;
