@@ -133,7 +133,7 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
     HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
     mipCount = numLevels;
     
-    for (int mipLevel = 1; /*numLevels - 5;*/mipLevel >= 0; --mipLevel)
+    for (int mipLevel = numLevels - 5; mipLevel >= 0; --mipLevel)
     {
         uint2 texDims;
         HiZPyramid.GetDimensions(mipLevel, texDims.x, texDims.y, outVar);
