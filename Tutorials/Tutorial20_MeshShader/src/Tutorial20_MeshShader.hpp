@@ -88,8 +88,6 @@ namespace Diligent
         float                  m_HiZSampleValue         = 0.f;
         float                  m_MinZValue              = 0.f;
         Uint32                 m_MipCount               = 0;
-        float4                 m_DebugFloat4_1;
-        float4                 m_DebugFloat4_2;
 
         RefCntAutoPtr<IBuffer> m_pVoxelPosBuffer;
         RefCntAutoPtr<IBuffer> m_pBestOccluderBuffer;

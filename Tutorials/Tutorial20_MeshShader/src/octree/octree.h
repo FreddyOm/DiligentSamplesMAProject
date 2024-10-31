@@ -225,16 +225,19 @@ public:
     // A tight node is a leaf node which is not bigger than the boundaries of the individual voxels summed! 
     bool IsTight()
     {
-        float boundDimension = (bounds.max.x - bounds.min.x);
-        float overfullVoxelDimension = GetVoxelSize() * 2 * 5; 
+        double exp = 1.0 / 3.0;
+        double base = maxObjectsPerLeaf;
 
-        return boundDimension < overfullVoxelDimension;
+        float boundDimension = (bounds.max.x - bounds.min.x);
+        double overfullVoxelDimension = std::ceil((GetVoxelSize() * 2) * pow(base, exp));
+
+        return boundDimension <= overfullVoxelDimension;
     }
 
     bool IsFull()
     {
         // Node is either full when voxel count is maximum voxel count and node is tight
-        if (objectIndices.size() >= maxObjectsPerLeaf)
+        if (objectIndices.size() >= maxObjectsPerLeaf && IsTight())
             return true;
 
         // Or if all children are full

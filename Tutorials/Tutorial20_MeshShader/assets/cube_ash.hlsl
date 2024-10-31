@@ -4,9 +4,6 @@
 #define SHOW_STATISTICS 1
 #endif
 
-Texture2D<float> HiZPyramid : register(t0);
-SamplerState HiZPyramid_sampler;
-
 // Statistics buffer contains the global counter of visible objects
 RWByteAddressBuffer Statistics : register(u0);
 
@@ -15,6 +12,9 @@ StructuredBuffer<VoxelBufData> VoxelPositionBuffer : register(t1);
 
 // Octree nodes
 StructuredBuffer<OctreeLeafNode> OctreeNodes : register(t2);
+
+Texture2D<float> HiZPyramid : register(s0);
+SamplerState HiZPyramid_sampler;
 
 cbuffer cbConstants : register(b0)
 {
@@ -64,10 +64,10 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
     float4 clipPos3 = mul(float4(corners1[2].xyz, 1.0), g_Constants.ViewProjMat);
     float4 clipPos4 = mul(float4(corners1[3].xyz, 1.0), g_Constants.ViewProjMat);
         
-    clipPos1 /= clipPos1.w; clipPos1 = saturate(clipPos1);
-    clipPos2 /= clipPos2.w; clipPos2 = saturate(clipPos2);
-    clipPos3 /= clipPos3.w; clipPos3 = saturate(clipPos3);
-    clipPos4 /= clipPos4.w; clipPos4 = saturate(clipPos4);
+    clipPos1 /= clipPos1.w; clipPos1 = clamp(clipPos1, -1, 1);
+    clipPos2 /= clipPos2.w; clipPos2 = clamp(clipPos2, -1, 1);
+    clipPos3 /= clipPos3.w; clipPos3 = clamp(clipPos3, -1, 1);
+    clipPos4 /= clipPos4.w; clipPos4 = clamp(clipPos4, -1, 1);
     
     // Initialize min/max values with first batch
     minXmaxXminYmaxY.x = min(min(clipPos1.x, clipPos2.x), min(clipPos3.x, clipPos4.x));
@@ -83,10 +83,10 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
     clipPos3 = mul(float4(corners2[2].xyz, 1.0), g_Constants.ViewProjMat);
     clipPos4 = mul(float4(corners2[3].xyz, 1.0), g_Constants.ViewProjMat);
     
-    clipPos1 /= clipPos1.w; clipPos1 = saturate(clipPos1);
-    clipPos2 /= clipPos2.w; clipPos2 = saturate(clipPos2);
-    clipPos3 /= clipPos3.w; clipPos3 = saturate(clipPos3);
-    clipPos4 /= clipPos4.w; clipPos4 = saturate(clipPos4);
+    clipPos1 /= clipPos1.w; clipPos1 = clamp(clipPos1, -1, 1);
+    clipPos2 /= clipPos2.w; clipPos2 = clamp(clipPos2, -1, 1);
+    clipPos3 /= clipPos3.w; clipPos3 = clamp(clipPos3, -1, 1);
+    clipPos4 /= clipPos4.w; clipPos4 = clamp(clipPos4, -1, 1);
     
     // Update min/max values with second batch
     minXmaxXminYmaxY.x = min(min(min(clipPos1.x, clipPos2.x), min(clipPos3.x, clipPos4.x)), minXmaxXminYmaxY.x);
@@ -96,16 +96,17 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
     
     float minZ2 = min(min(min(clipPos1.z, clipPos2.z), min(clipPos3.z, clipPos4.z)), minZ);
     
-    return min(minZ, minZ2);
+    return saturate(min(minZ, minZ2));
 }
 
 // HiZ occlusion culling in linear ndc space
-bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float MinZ, out uint mipCount, out float4 dF41, out float4 dF42)
+bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float MinZ, out uint mipCount)
 {    
     if (node.VoxelBufDataCount == 0)    // empty nodes are ignored (can occur due to draw task alignment)
         return false;
     
-    float4 worldPosAndScale = VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale;
+    //float4 worldPosAndScale = VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale;
+    float4 worldPosAndScale = node.BasePosAndScale;
     
     // Calculate min Z value of the transformed bounding box
     float4 clipPosVertices   = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
@@ -132,22 +133,20 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
     HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
     mipCount = numLevels;
     
-    for (uint mipLevel = numLevels - 5; mipLevel > 0; --mipLevel)
+    for (int mipLevel = 1; /*numLevels - 5;*/mipLevel >= 0; --mipLevel)
     {
-        float hiZDepthUL = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, upperLeftBoundingUV, mipLevel).r; // compare bounding box
-        float hiZDepthUR = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, upperRightBoundingUV, mipLevel).r;
-        float hiZDepthLL = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, lowerLeftBoundingUV, mipLevel).r;
-        float hiZDepthLR = 1.0f - HiZPyramid.SampleLevel(HiZPyramid_sampler, lowerRightBoundingUV, mipLevel).r;
+        uint2 texDims;
+        HiZPyramid.GetDimensions(mipLevel, texDims.x, texDims.y, outVar);
         
-        if (max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR)) < minZ)    // No bounding box z value was lower than z-pyramids z value -> fully occluded
-            return false;       // Return: is not visible
-    }
-
-    if (I == 0)
-    {
-        MinZ = minZ;
-        dF41.xy = upperLeftBoundingUV;
-        dF41.zw = upperRightBoundingUV;
+        float hiZDepthUL = HiZPyramid.Load(float3(uint2(upperLeftBoundingUV * texDims), mipLevel));
+        float hiZDepthUR = HiZPyramid.Load(float3(uint2(upperRightBoundingUV * texDims), mipLevel));
+        float hiZDepthLL = HiZPyramid.Load(float3(uint2(lowerLeftBoundingUV * texDims), mipLevel));
+        float hiZDepthLR = HiZPyramid.Load(float3(uint2(lowerRightBoundingUV * texDims), mipLevel));
+        
+        float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));        
+        
+        if (maxHiZDepth + g_Constants.OCThreshold <= minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
+            return false;            // Return: is not visible
     }
     
     return true; // All mip levels have been traversed and the bounding box has not been found to be occluded
@@ -159,8 +158,6 @@ groupshared uint s_TaskCount;
 groupshared uint s_OctreeNodeCount;
 groupshared float s_HZD;
 groupshared float s_MinZ;
-groupshared float4 s_DebugFloat4_1;
-groupshared float4 s_DebugFloat4_2;
 groupshared uint s_MipCount;
 
 [numthreads(GROUP_SIZE, 1, 1)]
@@ -175,8 +172,6 @@ void main(in uint I  : SV_GroupIndex,
         s_OctreeNodeCount = 0;
         s_HZD = 0.f;
         s_MinZ = 0.f;
-        s_DebugFloat4_1 = float4(-1, -1, -1, -1);
-        s_DebugFloat4_2 = float4(-1, -1, -1, -1);
         s_MipCount = 0;
 #endif
     }
@@ -196,26 +191,22 @@ void main(in uint I  : SV_GroupIndex,
 
     // Access node indices for each thread
     
-    float HZD            = -1;
-    float MinZ           = -1;
-    uint MipCount        = -1;
-    float4 DebugFloat4_1 = float4(-1, -1, -1, -1);
-    float4 DebugFloat4_2 = float4(-1, -1, -1, -1);
+    float HZD     = -1;
+    float MinZ    = -1;
+    uint MipCount = -1;
     
     uint cullVoxel = 0;
     cullVoxel += node.VoxelBufDataCount > 0 ? 0 : 1;
     cullVoxel += I < node.VoxelBufDataCount ? 0 : 1;
     cullVoxel += (g_Constants.FrustumCulling == 0 || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += IsVisible(node, I, HZD, MinZ, MipCount, DebugFloat4_1, DebugFloat4_2) ? 0 : 1;
+    cullVoxel += IsVisible(node, I, HZD, MinZ, MipCount) ? 0 : 1;
+    cullVoxel += (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount == GROUP_SIZE) ? 0 : 1;
     
     if (cullVoxel == 0) // only draw valid voxels
     {
         VoxelBufData voxel  = VoxelPositionBuffer[node.VoxelBufStartIndex + I];
         float3       pos    = voxel.BasePosAndScale.xyz;
         float        scale  = voxel.BasePosAndScale.w;
-        
-        DebugFloat4_2.xyz = pos;
-        DebugFloat4_2.w = scale;
         
         // Atomically increase task count
         uint index = 0;
@@ -234,21 +225,11 @@ void main(in uint I  : SV_GroupIndex,
         {
             GroupMemoryBarrier();
             uint temp;
-            InterlockedAdd(s_OctreeNodeCount, 1, temp);
+            InterlockedAdd(s_OctreeNodeCount, 1, temp);         
             
             InterlockedExchange(s_HZD, HZD, temp);
             InterlockedExchange(s_MinZ, MinZ, temp);
             InterlockedExchange(s_MipCount, MipCount, temp);
-            
-            InterlockedExchange(s_DebugFloat4_1.x, DebugFloat4_1.x, temp);
-            InterlockedExchange(s_DebugFloat4_1.y, DebugFloat4_1.y, temp);
-            InterlockedExchange(s_DebugFloat4_1.z, DebugFloat4_1.z, temp);
-            InterlockedExchange(s_DebugFloat4_1.w, DebugFloat4_1.w, temp);
-            
-            InterlockedExchange(s_DebugFloat4_2.x, DebugFloat4_2.x, temp);
-            InterlockedExchange(s_DebugFloat4_2.y, DebugFloat4_2.y, temp);
-            InterlockedExchange(s_DebugFloat4_2.z, DebugFloat4_2.z, temp);
-            InterlockedExchange(s_DebugFloat4_2.w, DebugFloat4_2.w, temp);
         }
 #endif
     }
@@ -269,16 +250,6 @@ void main(in uint I  : SV_GroupIndex,
         
         Statistics.Store(8, s_HZD);
         Statistics.Store(12, s_MinZ);
-        
-        Statistics.Store(16, s_DebugFloat4_1.x);
-        Statistics.Store(20, s_DebugFloat4_1.y);
-        Statistics.Store(24, s_DebugFloat4_1.z);
-        Statistics.Store(28, s_DebugFloat4_1.w);
-        
-        Statistics.Store(32, s_DebugFloat4_2.x);
-        Statistics.Store(36, s_DebugFloat4_2.y);
-        Statistics.Store(40, s_DebugFloat4_2.z);
-        Statistics.Store(44, s_DebugFloat4_2.w);
         
         Statistics.Store(48, s_MipCount);
 #endif

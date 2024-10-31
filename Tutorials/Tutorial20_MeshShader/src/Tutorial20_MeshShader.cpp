@@ -56,12 +56,8 @@ namespace Diligent
             float  hiZSampleValue;
             float  minZValue;
 
-            float4 debugFloat4_1;
-            float4 debugFloat4_2;
-
             Uint32 mipCount;
             Uint32 padding;
-
         };
         
         static_assert(sizeof(OctreeLeafNode) % 16 == 0, "Structure must be 16-byte aligned");
@@ -455,6 +451,17 @@ namespace Diligent
         PSODesc.ResourceLayout.ImmutableSamplers    = ImtblSamplers;
         PSODesc.ResourceLayout.NumImmutableSamplers = _countof(ImtblSamplers);
 
+
+        ShaderResourceVariableDesc shaderResourceVariableDesc[1];
+
+        shaderResourceVariableDesc[0].Name         = "HiZPyramid";
+        shaderResourceVariableDesc[0].ShaderStages = SHADER_TYPE_AMPLIFICATION;
+        shaderResourceVariableDesc[0].Type         = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
+        shaderResourceVariableDesc[0].Flags        = SHADER_VARIABLE_FLAG_NONE;
+
+        PSOCreateInfo.PSODesc.ResourceLayout.Variables = &shaderResourceVariableDesc[0];
+        PSOCreateInfo.PSODesc.ResourceLayout.NumVariables = _countof(shaderResourceVariableDesc);
+
         PSOCreateInfo.pAS = pAS;
         PSOCreateInfo.pMS = pMS;
         PSOCreateInfo.pPS = pPS;
@@ -787,7 +794,7 @@ namespace Diligent
             ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
             ImGui::Checkbox("Enable Light", &m_UseLight);
 
-            ImGui::SliderFloat("OC Threshold", &m_OCThreshold, -1.0f, 1.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::SliderFloat("Depth Bias", &m_OCThreshold, 0.0f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
             ImGui::Spacing();
 
             if (ImGui::Button("Reset Camera"))
@@ -803,9 +810,6 @@ namespace Diligent
             ImGui::Text("MinZ Value: %f", m_MinZValue);
             ImGui::Text("HiZ Sample Value: %f", m_HiZSampleValue);
             ImGui::Text("MipCount: %d", m_MipCount);
-
-            ImGui::Text("Debug f4 1: [%f, %f, %f, %f]", m_DebugFloat4_1.x, m_DebugFloat4_1.y, m_DebugFloat4_1.z, m_DebugFloat4_1.w);
-            ImGui::Text("Debug f4 2: [%f, %f, %f, %f]", m_DebugFloat4_2.x, m_DebugFloat4_2.y, m_DebugFloat4_2.z, m_DebugFloat4_2.w);
         }
         ImGui::End();
     }
@@ -893,6 +897,9 @@ namespace Diligent
 
         // Reset pipeline state to normally draw to back buffer
         m_pImmediateContext->SetPipelineState(m_pPSO);
+
+        m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid")->Set(m_pHiZPyramidTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+        
         m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -932,12 +939,10 @@ namespace Diligent
                 MapHelper<DrawStatistics> StagingData(m_pImmediateContext, m_pStatisticsStaging, MAP_READ, MAP_FLAG_DO_NOT_WAIT);
                 if (StagingData)
                 {
-                    m_VisibleCubes = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleCubes;
+                    m_VisibleCubes   = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleCubes;
                     m_VisibleOTNodes = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleOctreeNodes;
                     m_HiZSampleValue = StagingData[AvailableFrameId % m_StatisticsHistorySize].hiZSampleValue;
                     m_MinZValue      = StagingData[AvailableFrameId % m_StatisticsHistorySize].minZValue;
-                    m_DebugFloat4_1  = StagingData[AvailableFrameId % m_StatisticsHistorySize].debugFloat4_1;
-                    m_DebugFloat4_2  = StagingData[AvailableFrameId % m_StatisticsHistorySize].debugFloat4_2;
                     m_MipCount       = StagingData[AvailableFrameId % m_StatisticsHistorySize].mipCount;
                 }
             }
