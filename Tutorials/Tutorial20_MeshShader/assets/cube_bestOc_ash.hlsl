@@ -18,7 +18,7 @@ groupshared Payload s_Payload;
 bool IsVisible(float4 basePosAndScale)
 {
     float4 center = float4(basePosAndScale.xyz, 1.0f);
-    float radius = 0.71f * abs(basePosAndScale.z); // => diagonal (center-max point) = sqrt(2) * half_width / 2.0f | => 1/2 sqrt(2) * half_width
+    float radius = 0.71f * abs(basePosAndScale.z); // => diagonal (center-max point) = sqrt(2) * width / 2.0f | => sqrt(2) * half_width
     
     for (int i = 0; i < 6; ++i)
     {
