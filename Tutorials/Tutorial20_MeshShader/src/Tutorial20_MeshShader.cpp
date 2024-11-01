@@ -53,11 +53,6 @@ namespace Diligent
         {
             Uint32 visibleCubes;
             Uint32 visibleOctreeNodes;
-            float  hiZSampleValue;
-            float  minZValue;
-
-            Uint32 mipCount;
-            Uint32 padding;
         };
         
         static_assert(sizeof(OctreeLeafNode) % 16 == 0, "Structure must be 16-byte aligned");
@@ -790,23 +785,31 @@ namespace Diligent
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::Checkbox("Occlusion culling", &m_OcclusionCulling);
-            ImGui::Checkbox("Show best occluders only", &m_ShowOnlyBestOccluders);
-            ImGui::SliderFloat("Depth Bias", &m_OCThreshold, 0.0f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
+            ImGui::Text("Culling Options");
+
+            ImGui::Checkbox("Enable Occlusion Culling", &m_OcclusionCulling);
+            if (m_OcclusionCulling)
+            {
+                static const char* items[] = {"Cull Octree Nodes", "Cull Meshlets"};
+                ImGui::Combo("Culling Mode", &m_CullMode, items, IM_ARRAYSIZE(items));
+                ImGui::Checkbox("Show Best Occluders only", &m_ShowOnlyBestOccluders);
+                ImGui::SliderFloat("Depth Bias", &m_OCThreshold, 0.0f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
+            }
+
+            ImGui::Checkbox("Enable Frustum Culling", &m_FrustumCulling);
 
             ImGui::Spacing();
+            ImGui::Text("Visualization Options");
 
-            static const char* items[] = {"Cull Octree Nodes", "Cull Meshlets"};
-            ImGui::Combo("Culling Mode", &m_CullMode, items, IM_ARRAYSIZE(items));
+            ImGui::Checkbox("Meshlet Visualization", &m_MSDebugViz);
+            if (m_MSDebugViz)
+                ImGui::Checkbox("Octree Debug Visualization", &m_OTDebugViz);
 
             ImGui::Spacing();
+            ImGui::Text("Misc Options");
 
-            ImGui::Checkbox("MS Debug Visualization", &m_MSDebugViz);
-            ImGui::Checkbox("Octree Debug Visualization", &m_OTDebugViz);
-            ImGui::Spacing();
-
-            ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
             ImGui::Checkbox("Enable Light", &m_UseLight);
+            ImGui::Checkbox("Syncronize Camera Position", &m_SyncCamPosition);
 
             ImGui::Spacing();
 
@@ -817,12 +820,10 @@ namespace Diligent
             }
 
             ImGui::Spacing();
+            ImGui::Text("Statistics");
 
             ImGui::Text("Visible cubes: %d", m_VisibleCubes);
             ImGui::Text("Visible octree nodes: %d", m_VisibleOTNodes);
-            ImGui::Text("MinZ Value: %f", m_MinZValue);
-            ImGui::Text("HiZ Sample Value: %f", m_HiZSampleValue);
-            ImGui::Text("MipCount: %d", m_MipCount);
         }
         ImGui::End();
     }
@@ -874,18 +875,19 @@ namespace Diligent
         {
             // Map the buffer and write current view, view-projection matrix and other constants.
             MapHelper<Constants> CBConstants(m_pImmediateContext, m_pConstants, MAP_WRITE, MAP_FLAG_DISCARD);
-            CBConstants->ViewMat                = m_ViewMatrix.Transpose();
-            CBConstants->ViewProjMat            = m_ViewProjMatrix.Transpose();
-            CBConstants->CoTanHalfFov           = m_LodScale * m_CoTanHalfFov;
-            CBConstants->FrustumCulling         = m_FrustumCulling ? 1 : 0;
-            CBConstants->ShowOnlyBestOccluders  = m_ShowOnlyBestOccluders ? 1 : 0;
-            CBConstants->MSDebugViz             = m_MSDebugViz ? 1.0f : 0.0f;
-            CBConstants->OctreeDebugViz         = m_OTDebugViz ? 1.0f : 0.0f;
-            CBConstants->UseLight               = m_UseLight ? 1 : 0;
-            CBConstants->ViewportSize           = float2((float)pDSV->GetTexture()->GetDesc().Width, (float)pDSV->GetTexture()->GetDesc().Height);
-            CBConstants->OCThreshold            = m_OCThreshold;
-            CBConstants->OcclusionCulling       = m_OcclusionCulling ? 1 : 0;
-            CBConstants->CullMode               = m_CullMode;
+            CBConstants->ViewMat        = m_ViewMatrix.Transpose();
+            CBConstants->ViewProjMat    = m_ViewProjMatrix.Transpose();
+
+            CBConstants->DepthBias      = m_OCThreshold;
+            
+            CBConstants->RenderOptions = 0;
+            CBConstants->RenderOptions |= (m_CullMode << 0);
+            CBConstants->RenderOptions |= ((m_OcclusionCulling ? 1 : 0) << 1);
+            CBConstants->RenderOptions |= ((m_FrustumCulling ? 1 : 0) << 2);
+            CBConstants->RenderOptions |= ((m_ShowOnlyBestOccluders ? 1 : 0) << 3);
+            CBConstants->RenderOptions |= ((m_UseLight ? 1 : 0) << 4);
+            CBConstants->RenderOptions |= ((m_MSDebugViz ? 1 : 0) << 5);
+            CBConstants->RenderOptions |= ((m_OTDebugViz ? 1 : 0) << 6);
 
             // Calculate frustum planes from view-projection matrix.
             if (m_SyncCamPosition)
@@ -956,9 +958,6 @@ namespace Diligent
                 {
                     m_VisibleCubes   = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleCubes;
                     m_VisibleOTNodes = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleOctreeNodes;
-                    m_HiZSampleValue = StagingData[AvailableFrameId % m_StatisticsHistorySize].hiZSampleValue;
-                    m_MinZValue      = StagingData[AvailableFrameId % m_StatisticsHistorySize].minZValue;
-                    m_MipCount       = StagingData[AvailableFrameId % m_StatisticsHistorySize].mipCount;
                 }
             }
     

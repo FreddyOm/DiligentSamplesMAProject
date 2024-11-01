@@ -32,21 +32,19 @@ struct Constants
 {
     float4x4 ViewMat;           // 4 * 16 = 64
     float4x4 ViewProjMat;       // 4 * 16 = 64
+    
     float4 Frustum[6];          // 4 * 6 = 24
-
-    float CoTanHalfFov;         // 4
-    float MSDebugViz;           // 4
-    float OctreeDebugViz;       // 4
-    uint FrustumCulling;        // 4    // @TODO: Change this to single bits in one uint
-    
-    uint ShowOnlyBestOccluders; // 4
-    uint UseLight;              // 4
-    float2 ViewportSize;        // 8    
-    
-    float OCThreshold;          // 4
-    uint OcclusionCulling;      // 4
-    uint CullMode;              // 4
-    uint padding;               // 4
+    float DepthBias;            // 4
+    uint RenderOptions;         // 4    // Bitwise Options: 
+                                //         [
+                                //              0 = CullMode, 
+                                //              1 = UseOcclusionCulling, 
+                                //              2 = UseFrustumCulling, 
+                                //              3 = ShowOnlyBestOccluders, 
+                                //              4 = UseLight, 
+                                //              5 = MeshShadingDebugViz, 
+                                //              6 = OctreeDebugViz
+                                //          ]
 };
 
 // Payload size must be less than 16kb.

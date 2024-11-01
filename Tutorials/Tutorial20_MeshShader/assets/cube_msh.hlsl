@@ -148,6 +148,11 @@ float4 getRandomPrimitiveColor(float randMeshletVal)
     return primitiveColors[colorIdx];
 }
 
+bool GetRenderOption(uint bit)
+{
+    return (g_Constants.RenderOptions & (1u << bit)) ? true : false;
+}
+
 [numthreads(24, 1, 1)]       // use 24 threads out of the 32 maximum available
 [outputtopology("triangle")] // output primitive type is triangle list
 void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader output (0 .. 23)
@@ -173,7 +178,7 @@ void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader 
     verts[I].Normal = mul(float4(constCubeNormals[I], 0.0), g_Constants.ViewProjMat).xyz;
     
     verts[I].UV = constCubeUVs[I].xy;
-    verts[I].Color = g_Constants.MSDebugViz * getRandomPrimitiveColor((randValue + ((1 - g_Constants.OctreeDebugViz) * 0.1f * gid)) % 1.0f);
+    verts[I].Color = (GetRenderOption(5) ? 1 : 0) * getRandomPrimitiveColor((randValue + ((1 - GetRenderOption(6)) * 0.1f * gid)) % 1.0f);
     
     // Only the first 12 threads write indices. We must not access the array outside of its bounds.
     if (I < 12)

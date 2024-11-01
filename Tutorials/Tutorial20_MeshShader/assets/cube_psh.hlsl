@@ -25,6 +25,11 @@ static const float3 g_LightDirection = normalize(float3(-1.0f, -1.0f, -1.0f)); /
 static const float4 g_LightColor = float4(1.0f, 1.0f, 1.0f, 1.0f); // Light color (white)
 static const float g_AmbientIntensity = 0.2f;
 
+bool GetRenderOption(uint bit)
+{
+    return (g_Constants.RenderOptions & (1u << bit)) ? true : false;
+}
+
 void main(in PSInput PSIn,
           out PSOutput PSOut)
 {    
@@ -42,10 +47,10 @@ void main(in PSInput PSIn,
     // Combine final lighting color with texture color or mesh color
     if (length(PSIn.Color.xyz) > 0.0f)
     {
-        PSOut.Color = PSIn.Color * (g_Constants.UseLight ? finalColor : 1.0f);
+        PSOut.Color = PSIn.Color * (GetRenderOption(4) ? finalColor : 1.0f);
     }
     else
     {
-        PSOut.Color = g_Texture.Sample(g_Texture_sampler, PSIn.UV) * (g_Constants.UseLight ? finalColor : 1.0f);
+        PSOut.Color = g_Texture.Sample(g_Texture_sampler, PSIn.UV) * (GetRenderOption(4) ? finalColor : 1.0f);
     }
 }

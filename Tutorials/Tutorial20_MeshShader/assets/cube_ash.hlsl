@@ -24,6 +24,11 @@ cbuffer cbConstants : register(b0)
 // Payload will be used in the mesh shader.
 groupshared Payload s_Payload;
 
+bool GetRenderOption(uint bit)
+{
+    return (g_Constants.RenderOptions & (1u << bit)) ?  true : false;
+}
+
 bool IsInCameraFrustum(float4 basePosAndScale)
 {
     float4 center = float4(basePosAndScale.xyz, 1.0f);
@@ -100,13 +105,13 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
 }
 
 // HiZ occlusion culling in linear ndc space
-bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float MinZ, out uint mipCount)
+bool IsVisible(OctreeLeafNode node, uint I)
 {    
     if (node.VoxelBufDataCount == 0)    // empty nodes are ignored (can occur due to draw task alignment)
         return false;
     
     //                                                      Meshlet                                                         Octree Node
-    float4 worldPosAndScale = g_Constants.CullMode > 0 ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
+    float4 worldPosAndScale = GetRenderOption(0) ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
     
     // Calculate min Z value of the transformed bounding box
     float4 clipPosVertices   = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
@@ -131,7 +136,6 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
     uint numLevels = 1; // At least one mip level is assumed
     uint outVar;
     HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
-    mipCount = numLevels;
     
     for (int mipLevel = max(numLevels - 3, 1); mipLevel >= 0; --mipLevel)
     {
@@ -145,7 +149,7 @@ bool IsVisible(OctreeLeafNode node, uint I, out float HiZDepthVal, out float Min
         
         float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
         
-        if (maxHiZDepth + g_Constants.OCThreshold < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
+        if (maxHiZDepth + g_Constants.DepthBias < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
             return false;            // Return: is not visible
     }
     
@@ -164,17 +168,14 @@ groupshared uint s_MipCount;
 void main(in uint I  : SV_GroupIndex,
           in uint wg : SV_GroupID)
 {
+#if SHOW_STATISTICS
     // Reset the counter from the first thread in the group
     if (I == 0)
     {
         s_TaskCount = 0;
-#if SHOW_STATISTICS
         s_OctreeNodeCount = 0;
-        s_HZD = 0.f;
-        s_MinZ = 0.f;
-        s_MipCount = 0;
-#endif
     }
+#endif
 
     // Flush the cache and synchronize
     GroupMemoryBarrierWithGroupSync();
@@ -189,18 +190,13 @@ void main(in uint I  : SV_GroupIndex,
     int taskCount = (int) node.RandomValue.y;
     int padding = (int) node.RandomValue.z;
 
-    // Access node indices for each thread
-    
-    float HZD     = -1;
-    float MinZ    = -1;
-    uint MipCount = -1;
-    
+    // Access node indices for each thread    
     uint cullVoxel = 0;
     cullVoxel += node.VoxelBufDataCount > 0 ? 0 : 1;
     cullVoxel += I < node.VoxelBufDataCount ? 0 : 1;
-    cullVoxel += (g_Constants.FrustumCulling == 0 || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += (g_Constants.OcclusionCulling == 0 || IsVisible(node, I, HZD, MinZ, MipCount)) ? 0 : 1;
-    cullVoxel += (g_Constants.ShowOnlyBestOccluders == 0 || node.VoxelBufDataCount >= GROUP_SIZE) ? 0 : 1;
+    cullVoxel += (GetRenderOption(2) || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(node, I)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(3) == 0 || node.VoxelBufDataCount >= GROUP_SIZE) ? 0 : 1;
     
     if (cullVoxel == 0) // only draw valid voxels
     {
@@ -226,10 +222,6 @@ void main(in uint I  : SV_GroupIndex,
             GroupMemoryBarrier();
             uint temp;
             InterlockedAdd(s_OctreeNodeCount, 1, temp);         
-            
-            InterlockedExchange(s_HZD, HZD, temp);
-            InterlockedExchange(s_MinZ, MinZ, temp);
-            InterlockedExchange(s_MipCount, MipCount, temp);
         }
 #endif
     }
@@ -239,19 +231,13 @@ void main(in uint I  : SV_GroupIndex,
 
     if (node.VoxelBufDataCount > 0 && I == 0)
     {
+#if SHOW_STATISTICS
         // Update statistics from the first thread
         uint orig_value_task_count;
         Statistics.InterlockedAdd(0, s_TaskCount, orig_value_task_count);
         
-#if SHOW_STATISTICS
-  
         uint orig_value_ocn_count;
         Statistics.InterlockedAdd(4, s_OctreeNodeCount, orig_value_ocn_count);
-        
-        Statistics.Store(8, s_HZD);
-        Statistics.Store(12, s_MinZ);
-        
-        Statistics.Store(48, s_MipCount);
 #endif
     }
     
