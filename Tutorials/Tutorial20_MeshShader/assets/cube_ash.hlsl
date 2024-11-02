@@ -14,7 +14,6 @@ StructuredBuffer<VoxelBufData> VoxelPositionBuffer : register(t1);
 StructuredBuffer<OctreeLeafNode> OctreeNodes : register(t2);
 
 Texture2D<float> HiZPyramid : register(s0);
-SamplerState HiZPyramid_sampler;
 
 cbuffer cbConstants : register(b0)
 {
@@ -136,7 +135,7 @@ bool IsVisible(OctreeLeafNode node, uint I)
     uint numLevels = 1; // At least one mip level is assumed
     uint outVar;
     HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
-    
+  
     for (int mipLevel = max(numLevels - 3, 1); mipLevel >= 0; --mipLevel)
     {
         uint2 texDims;
@@ -160,9 +159,6 @@ bool IsVisible(OctreeLeafNode node, uint I)
 // computed by every thread group
 groupshared uint s_TaskCount;
 groupshared uint s_OctreeNodeCount;
-groupshared float s_HZD;
-groupshared float s_MinZ;
-groupshared uint s_MipCount;
 
 [numthreads(GROUP_SIZE, 1, 1)]
 void main(in uint I  : SV_GroupIndex,

@@ -202,7 +202,7 @@ namespace Diligent
 
             // Visit all nodes and search for "full" nodes
             m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
-            VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Might be valid to be 0, though
+            VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Couldn't find any best occluders
         }
         
         // Temporary buffer for octree insertion - can now be cleared (but was formerly used in QueryAllNodes()!)
@@ -434,16 +434,10 @@ namespace Diligent
             FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR, FILTER_TYPE_LINEAR, 
             TEXTURE_ADDRESS_CLAMP, TEXTURE_ADDRESS_CLAMP, TEXTURE_ADDRESS_CLAMP
         };
-        SamplerDesc SamPointDesc
-        {
-            FILTER_TYPE_POINT, FILTER_TYPE_POINT, FILTER_TYPE_POINT, 
-            TEXTURE_ADDRESS_CLAMP, TEXTURE_ADDRESS_CLAMP, TEXTURE_ADDRESS_CLAMP
-        };
 
         ImmutableSamplerDesc ImtblSamplers[] = 
         {
-            {SHADER_TYPE_PIXEL, "g_Texture", SamLinearClampDesc},
-            {SHADER_TYPE_AMPLIFICATION, "HiZPyramid", SamPointDesc}
+            {SHADER_TYPE_PIXEL, "g_Texture", SamLinearClampDesc}
         };
         // clang-format on
         PSODesc.ResourceLayout.ImmutableSamplers    = ImtblSamplers;
@@ -973,9 +967,9 @@ namespace Diligent
     {
         SampleBase::Update(CurrTime, ElapsedTime);
         UpdateUI();
-    
+
         fpc.Update(GetInputController(), (float)ElapsedTime);
-    
+
         // Set camera position
         float4x4 View = fpc.GetViewMatrix();
     

@@ -118,7 +118,6 @@ namespace Diligent
 
         float4x4    m_ViewProjMatrix;
         float4x4    m_ViewMatrix;
-        float       m_RotationAngle  = 0;
         bool        m_MSDebugViz     = false;
         bool        m_OTDebugViz     = false;
         bool        m_FrustumCulling = true;
