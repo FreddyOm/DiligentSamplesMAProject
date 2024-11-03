@@ -47,14 +47,14 @@ public:
         }
     }
 
-    void QueryAllNodes(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuf, std::vector<char>& duplicateBuffer, std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
+    void QueryAllNodes(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuf, std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
     {
         // Check for children (Buttom Up)
         for (int i = 0; i < children.size(); ++i)
         {
             if (children[i] != nullptr)
             {                
-                children[i]->QueryAllNodes(orderedVoxelDataBuf, duplicateBuffer, octreeNodeBuffer);
+                children[i]->QueryAllNodes(orderedVoxelDataBuf, octreeNodeBuffer);
             }
         }
 
@@ -68,20 +68,16 @@ public:
 
         if (objectIndices.size() > 0)       // Only insert nodes which actually store voxels. Makes it easier to iterate in depth pre-pass
             octreeNodeBuffer.push_back(std::move(ocNode));
-
+        
         // Add own indices if this node has it's own indices
         for (int index = 0; index < objectIndices.size(); ++index)
         {
-            if (duplicateBuffer[objectIndices[index]] == 0)
-            {
-                VoxelOC::VoxelBufData voxelData;
-                voxelData.BasePosAndScale = OTVoxelBoundBuffer[objectIndices[index]].CenterAndScale();
-                
-                VERIFY_EXPR(voxelData.BasePosAndScale.w == 1);
+            VoxelOC::VoxelBufData voxelData;
+            voxelData.BasePosAndScale = OTVoxelBoundBuffer[objectIndices[index]].CenterAndScale();
 
-                orderedVoxelDataBuf.push_back(std::move(voxelData));
-                duplicateBuffer[objectIndices[index]] = 1;
-            }
+            VERIFY_EXPR(voxelData.BasePosAndScale.w == 1);
+
+            orderedVoxelDataBuf.push_back(std::move(voxelData));
         }
     }
 

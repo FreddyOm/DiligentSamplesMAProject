@@ -178,7 +178,6 @@ namespace Diligent
 
         VERIFY_EXPR(m_pOcclusionOctreeRoot != nullptr);
         VERIFY_EXPR(m_pOcclusionOctreeRoot->gridSize > 0);
-        VERIFY_EXPR(m_pOcclusionOctreeRoot->nodeBuffer.size() > 0);
         
         // Buffer where objects in one node are stored contigously (start index + length)
         std::vector<VoxelOC::VoxelBufData>  orderedVoxelDataBuffer{};
@@ -193,11 +192,8 @@ namespace Diligent
         depthPrepassOTNodes.reserve(OTLeafNodes.size());
         
         {
-            // Buffer to avoid duplicate entries of voxels into the ordered voxel data buffer
-            std::vector<char> duplicateBuffer(OTVoxelBoundBuffer.size(), 0); // Can be discarded after QueryAllNodes
-
             // Visist all nodes and fill the given buffers with data
-            m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, duplicateBuffer, OTLeafNodes);
+            m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
             VERIFY_EXPR(orderedVoxelDataBuffer.size() > 0 && OTLeafNodes.size() > 0);
 
             // Visit all nodes and search for "full" nodes
@@ -260,12 +256,11 @@ namespace Diligent
                 for (int x = 0; x < data.width; ++x)
                 {
                     size_t index = get_index(x, y, z, data);
-                    if (data.voxels[index] > 0)
-                    {
-                        AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
-                        OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
-                        m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
-                    }
+                    if (data.voxels[index] == 0) continue;
+                    
+                    AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
+                    OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+                    m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
                 }
             }
         }
@@ -280,11 +275,11 @@ namespace Diligent
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
         BuffDesc.ElementByteStride = sizeof(orderedVoxelDataBuffer[0]);
         BuffDesc.Size              = sizeof(orderedVoxelDataBuffer[0]) * static_cast<Uint32>(orderedVoxelDataBuffer.size());
-
+        
         BufferData BufData;
         BufData.pData    = orderedVoxelDataBuffer.data();
         BufData.DataSize = BuffDesc.Size;
-
+        
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pVoxelPosBuffer);
         VERIFY_EXPR(m_pVoxelPosBuffer != nullptr);
     }
@@ -898,17 +893,21 @@ namespace Diligent
                 CBConstants->Frustum[i] = plane;
             }
 
-            // Draw best occluders to depth buffer
-            DepthPrepass();
+            // Only do occlusino culling as long as there are actual occluders available
+            if (m_pBestOccluderBuffer != nullptr && m_pBestOccluderBuffer->GetDesc().Size > 0)
+            {
+                // Draw best occluders to depth buffer
+                DepthPrepass();
 
-            // Clear Depth Stencil to avoid flickering (Remove later, should be able to just )
-            m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                // Clear Depth Stencil to avoid flickering (Remove later, should be able to just )
+                m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            }
         }        
 
         // Reset pipeline state to normally draw to back buffer
         m_pImmediateContext->SetPipelineState(m_pPSO);
-
+        
         m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid")->Set(m_pHiZPyramidTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
         
         m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
