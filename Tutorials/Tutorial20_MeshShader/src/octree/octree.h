@@ -40,11 +40,6 @@ public:
     ~OctreeNode()
     {
         objectIndices.clear();
-        
-        for(auto & child : children)
-        {
-            delete child;
-        }
     }
 
     void QueryAllNodes(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuf, std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
@@ -250,5 +245,19 @@ public:
         }
         
         return true;
+    }
+
+    void ResetContent()
+    {
+        for (auto*& child : children)
+        {
+            if (child != nullptr)
+            {
+                child->ResetContent();
+                delete child;
+                child = nullptr;
+            }
+        }
+        isLeaf = false;
     }
 };

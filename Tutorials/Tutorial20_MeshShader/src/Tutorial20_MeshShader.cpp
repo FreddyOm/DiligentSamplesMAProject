@@ -171,6 +171,8 @@ namespace Diligent
     {
         delete m_pOcclusionOctreeRoot;
     }
+
+    std::vector<VoxelOC::VoxelBufData> orderedVoxelDataBuffer{};
     
     void Tutorial20_MeshShader::CreateDrawTasksFromMesh(std::string meshPath)
     {    
@@ -180,7 +182,6 @@ namespace Diligent
         VERIFY_EXPR(m_pOcclusionOctreeRoot->gridSize > 0);
         
         // Buffer where objects in one node are stored contigously (start index + length)
-        std::vector<VoxelOC::VoxelBufData>  orderedVoxelDataBuffer{};
         orderedVoxelDataBuffer.reserve(OTVoxelBoundBuffer.size());
         
         // Buffer for all octree nodes which include at least one voxel
@@ -196,13 +197,17 @@ namespace Diligent
             m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
             VERIFY_EXPR(orderedVoxelDataBuffer.size() > 0 && OTLeafNodes.size() > 0);
 
+            // Now reset octree in order to refill it frame by frame
+            m_pOcclusionOctreeRoot->ResetContent();
+            m_pOcclusionOctreeRoot->isLeaf = true;
+
             // Visit all nodes and search for "full" nodes
             m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
-            VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Couldn't find any best occluders
+            //VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Couldn't find any best occluders
         }
         
         // Temporary buffer for octree insertion - can now be cleared (but was formerly used in QueryAllNodes()!)
-        OTVoxelBoundBuffer.clear();
+        //OTVoxelBoundBuffer.clear();
         // Assign some more (debug) data to the draw tasks (= octree leaf nodes)
         FastRandReal<float> Rnd{0, 0.f, 1.f};
 
@@ -527,7 +532,7 @@ namespace Diligent
 
         // Bind resources
 
-        if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "BestOccluders"))
+        if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "BestOccluders") && m_pBestOccluderBuffer != nullptr)
             m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "BestOccluders")->Set(m_pBestOccluderBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
 
         if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants"))
@@ -768,6 +773,22 @@ namespace Diligent
         // Flush the context to ensure all commands are executed
         m_pImmediateContext->Flush();
     }
+
+    void Tutorial20_MeshShader::UpdateVoxelMeshPerFrame()
+    {
+        if (voxelIndexCnt >= orderedVoxelDataBuffer.size())
+        {
+            return;
+        }
+
+        m_pOcclusionOctreeRoot->InsertObject(voxelIndexCnt, OTVoxelBoundBuffer[voxelIndexCnt]);
+
+        // Update best occluder buffer and map to GPU
+        BindOctreeNodeBuffer(OTLeafNodes);
+        BindBestOccluderBuffer(depthPrepassOTNodes);
+
+        ++voxelIndexCnt;
+    }
     
     void Tutorial20_MeshShader::UpdateUI()
     {
@@ -966,7 +987,7 @@ namespace Diligent
     {
         SampleBase::Update(CurrTime, ElapsedTime);
         UpdateUI();
-
+        
         fpc.Update(GetInputController(), (float)ElapsedTime);
 
         // Set camera position

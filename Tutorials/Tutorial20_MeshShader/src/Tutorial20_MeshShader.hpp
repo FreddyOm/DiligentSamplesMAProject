@@ -71,6 +71,10 @@ namespace Diligent
         void                   DepthPrepass();
         void                   CreateHiZTextures();
         void                   GenerateHiZ();
+
+        void UpdateVoxelMeshPerFrame();
+
+        Uint64 voxelIndexCnt = 0;
     
         RefCntAutoPtr<IBuffer>      m_CubeBuffer;
         RefCntAutoPtr<ITextureView> m_CubeTextureSRV;
