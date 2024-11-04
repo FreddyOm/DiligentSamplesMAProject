@@ -236,7 +236,8 @@ namespace Diligent
         BindBestOccluderBuffer(depthPrepassOTNodes);
         
         // Set draw task count
-        m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size());
+        m_DrawTaskCount          = static_cast<Uint32>(OTLeafNodes.size()) / ASGroupSize;
+        m_DrawTaskCount += ASGroupSize - (m_DrawTaskCount % ASGroupSize);
         VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
 
         m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size());
@@ -248,7 +249,7 @@ namespace Diligent
         BinvoxData data = read_binvox(OTmodelPath);
 
         AABB worldBounds       = {{0, 0, 0}, {(float)data.width, (float)data.height, (float)data.depth}};
-        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds, ASGroupSize);
+        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds);
 
         for (int z = 0; z < data.depth; ++z)
         {
@@ -289,7 +290,7 @@ namespace Diligent
     void Tutorial20_MeshShader::BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
     {
         // Realign octree node buffer
-        octreeNodeBuffer.resize(octreeNodeBuffer.size() + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
+        octreeNodeBuffer.resize((octreeNodeBuffer.size()) + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
         VERIFY_EXPR(octreeNodeBuffer.size() % ASGroupSize == 0);
 
         BufferDesc BuffDesc;

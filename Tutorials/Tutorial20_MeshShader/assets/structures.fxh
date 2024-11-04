@@ -1,5 +1,9 @@
 #ifndef GROUP_SIZE
-#define GROUP_SIZE 64   // max 1024
+#define GROUP_SIZE 4   // max 1024
+#endif
+
+#ifndef VOXELS_PER_NODE
+#define VOXELS_PER_NODE 64
 #endif
 
 // 32 bytes
@@ -53,11 +57,11 @@ struct Payload
     // Currently, DXC fails to compile the code when
     // the struct declares float3 Pos, so we have to
     // use struct of arrays
-    float PosX[GROUP_SIZE];
-    float PosY[GROUP_SIZE];
-    float PosZ[GROUP_SIZE];
-    float Scale[GROUP_SIZE];
-    float MSRand[GROUP_SIZE];
+    float PosX[GROUP_SIZE * VOXELS_PER_NODE];
+    float PosY[GROUP_SIZE * VOXELS_PER_NODE];
+    float PosZ[GROUP_SIZE * VOXELS_PER_NODE];
+    float Scale[GROUP_SIZE * VOXELS_PER_NODE];
+    float MSRand[GROUP_SIZE * VOXELS_PER_NODE];
 };
 
 struct HiZConstants

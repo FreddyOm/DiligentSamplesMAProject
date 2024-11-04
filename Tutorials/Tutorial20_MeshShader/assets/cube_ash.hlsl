@@ -104,13 +104,12 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
 }
 
 // HiZ occlusion culling in linear ndc space
-bool IsVisible(OctreeLeafNode node, uint I)
+bool IsVisible(OctreeLeafNode node)
 {    
     if (node.VoxelBufDataCount == 0)    // empty nodes are ignored (can occur due to draw task alignment)
         return false;
     
-    //                                                      Meshlet                                                         Octree Node
-    float4 worldPosAndScale = GetRenderOption(0) ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
+    float4 worldPosAndScale = node.BasePosAndScale;
     
     // Calculate min Z value of the transformed bounding box
     float4 clipPosVertices   = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
@@ -180,47 +179,54 @@ void main(in uint I  : SV_GroupIndex,
     const uint gid = wg * GROUP_SIZE + I;
     
     // Get the node for this thread group
-    OctreeLeafNode node = OctreeNodes[wg];
+    OctreeLeafNode node = OctreeNodes[gid];
     
     float meshletColorRndValue = node.RandomValue.x;
     int taskCount = (int) node.RandomValue.y;
     int padding = (int) node.RandomValue.z;
 
     // Access node indices for each thread    
-    uint cullVoxel = 0;
-    cullVoxel += node.VoxelBufDataCount > 0 ? 0 : 1;
-    cullVoxel += I < node.VoxelBufDataCount ? 0 : 1;
-    cullVoxel += (GetRenderOption(2) || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(node, I)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(3) == 0 || node.VoxelBufDataCount >= GROUP_SIZE) ? 0 : 1;
+    uint cullNode = 0;
+    cullNode += node.VoxelBufDataCount > 0 ? 0 : 1;
+    cullNode += (GetRenderOption(2) || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
+    cullNode += (GetRenderOption(1) == 0 || IsVisible(node)) ? 0 : 1;
+    cullNode += (GetRenderOption(3) == 0 || node.VoxelBufDataCount >= VOXELS_PER_NODE) ? 0 : 1;
     
-    if (cullVoxel == 0) // only draw valid voxels
+    if (cullNode == 0)
     {
-        VoxelBufData voxel  = VoxelPositionBuffer[node.VoxelBufStartIndex + I];
-        float3       pos    = voxel.BasePosAndScale.xyz;
-        float        scale  = voxel.BasePosAndScale.w;
+         // Draw all voxels
+        for (uint i = 0; i < VOXELS_PER_NODE; ++i)
+        {
+            if (i < node.VoxelBufDataCount) // only draw valid voxels
+            {
+                VoxelBufData voxel = VoxelPositionBuffer[node.VoxelBufStartIndex + i];
+                float3 pos = voxel.BasePosAndScale.xyz;
+                float scale = voxel.BasePosAndScale.w;
         
         // Atomically increase task count
-        uint index = 0;
-        InterlockedAdd(s_TaskCount, 1, index);
+                uint index = 0;
+                InterlockedAdd(s_TaskCount, 1, index);
 
         // Add mesh data to payload
-        s_Payload.PosX[index] = pos.x;
-        s_Payload.PosY[index] = pos.y;
-        s_Payload.PosZ[index] = pos.z;
-        s_Payload.Scale[index] = scale;
-        s_Payload.MSRand[index] = meshletColorRndValue;
+                s_Payload.PosX[index] = pos.x;
+                s_Payload.PosY[index] = pos.y;
+                s_Payload.PosZ[index] = pos.z;
+                s_Payload.Scale[index] = scale;
+                s_Payload.MSRand[index] = meshletColorRndValue;
         
 #if SHOW_STATISTICS
         
-        if (node.VoxelBufDataCount > 0 && I == 0)
-        {
-            GroupMemoryBarrier();
-            uint temp;
-            InterlockedAdd(s_OctreeNodeCount, 1, temp);         
-        }
+                if (node.VoxelBufDataCount > 0 && i == 0)
+                {
+                    GroupMemoryBarrier();
+                    uint temp;
+                    InterlockedAdd(s_OctreeNodeCount, 1, temp);
+                }
 #endif
+            }
+        }
     }
+   
     
     // All threads must complete their work so that we can read s_TaskCount
     GroupMemoryBarrierWithGroupSync();
