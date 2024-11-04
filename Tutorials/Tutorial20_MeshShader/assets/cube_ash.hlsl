@@ -8,12 +8,12 @@
 RWByteAddressBuffer Statistics : register(u0);
 
 // Ordered voxel position buffer
-StructuredBuffer<VoxelBufData> VoxelPositionBuffer : register(t1);
+StructuredBuffer<VoxelBufData> VoxelPositionBuffer : register(t0);
 
 // Octree nodes
-StructuredBuffer<OctreeLeafNode> OctreeNodes : register(t2);
+StructuredBuffer<OctreeLeafNode> OctreeNodes : register(t1);
 
-Texture2D<float> HiZPyramid : register(s0);
+RWByteAddressBuffer VisibilityBuffer : register(u1);
 
 cbuffer cbConstants : register(b0)
 {
@@ -41,118 +41,10 @@ bool IsInCameraFrustum(float4 basePosAndScale)
     return true;
 }
 
-// Get themminium Z value, the minimum bound vertex poitions, and the perspectiveDivide for the given Z value
-float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
-{
-    float3 basePos = BasePosAndScale.xyz;
-    float halfScale = BasePosAndScale.w * 0.5;
-    
-    // Create all corner positions at once using vector operations
-    float4x3 corners1 = float4x3(
-        basePos + float3(-halfScale, -halfScale, -halfScale),
-        basePos + float3(-halfScale, -halfScale, halfScale),
-        basePos + float3(-halfScale, halfScale, -halfScale),
-        basePos + float3(-halfScale, halfScale, halfScale)
-    );
-    
-    float4x3 corners2 = float4x3(
-        basePos + float3(halfScale, -halfScale, -halfScale),
-        basePos + float3(halfScale, -halfScale, halfScale),
-        basePos + float3(halfScale, halfScale, -halfScale),
-        basePos + float3(halfScale, halfScale, halfScale)
-    );
-    
-    // Transform first batch
-    float4 clipPos1 = mul(float4(corners1[0].xyz, 1.0), g_Constants.ViewProjMat);
-    float4 clipPos2 = mul(float4(corners1[1].xyz, 1.0), g_Constants.ViewProjMat);
-    float4 clipPos3 = mul(float4(corners1[2].xyz, 1.0), g_Constants.ViewProjMat);
-    float4 clipPos4 = mul(float4(corners1[3].xyz, 1.0), g_Constants.ViewProjMat);
-        
-    clipPos1 /= clipPos1.w; clipPos1 = clamp(clipPos1, -1, 1);
-    clipPos2 /= clipPos2.w; clipPos2 = clamp(clipPos2, -1, 1);
-    clipPos3 /= clipPos3.w; clipPos3 = clamp(clipPos3, -1, 1);
-    clipPos4 /= clipPos4.w; clipPos4 = clamp(clipPos4, -1, 1);
-    
-    // Initialize min/max values with first batch
-    minXmaxXminYmaxY.x = min(min(clipPos1.x, clipPos2.x), min(clipPos3.x, clipPos4.x));
-    minXmaxXminYmaxY.y = max(max(clipPos1.x, clipPos2.x), max(clipPos3.x, clipPos4.x));
-    minXmaxXminYmaxY.z = min(min(clipPos1.y, clipPos2.y), min(clipPos3.y, clipPos4.y));
-    minXmaxXminYmaxY.w = max(max(clipPos1.y, clipPos2.y), max(clipPos3.y, clipPos4.y));
-    
-    float minZ = min(min(clipPos1.z, clipPos2.z), min(clipPos3.z, clipPos4.z));
-    
-    // Transform second batch
-    clipPos1 = mul(float4(corners2[0].xyz, 1.0), g_Constants.ViewProjMat);
-    clipPos2 = mul(float4(corners2[1].xyz, 1.0), g_Constants.ViewProjMat);
-    clipPos3 = mul(float4(corners2[2].xyz, 1.0), g_Constants.ViewProjMat);
-    clipPos4 = mul(float4(corners2[3].xyz, 1.0), g_Constants.ViewProjMat);
-    
-    clipPos1 /= clipPos1.w; clipPos1 = clamp(clipPos1, -1, 1);
-    clipPos2 /= clipPos2.w; clipPos2 = clamp(clipPos2, -1, 1);
-    clipPos3 /= clipPos3.w; clipPos3 = clamp(clipPos3, -1, 1);
-    clipPos4 /= clipPos4.w; clipPos4 = clamp(clipPos4, -1, 1);
-    
-    // Update min/max values with second batch
-    minXmaxXminYmaxY.x = min(min(min(clipPos1.x, clipPos2.x), min(clipPos3.x, clipPos4.x)), minXmaxXminYmaxY.x);
-    minXmaxXminYmaxY.y = max(max(max(clipPos1.x, clipPos2.x), max(clipPos3.x, clipPos4.x)), minXmaxXminYmaxY.y);
-    minXmaxXminYmaxY.z = min(min(min(clipPos1.y, clipPos2.y), min(clipPos3.y, clipPos4.y)), minXmaxXminYmaxY.z);
-    minXmaxXminYmaxY.w = max(max(max(clipPos1.y, clipPos2.y), max(clipPos3.y, clipPos4.y)), minXmaxXminYmaxY.w);
-    
-    float minZ2 = min(min(min(clipPos1.z, clipPos2.z), min(clipPos3.z, clipPos4.z)), minZ);
-    
-    return saturate(min(minZ, minZ2));
-}
-
 // HiZ occlusion culling in linear ndc space
-bool IsVisible(OctreeLeafNode node, uint I)
+bool IsVisible(uint gid)
 {    
-    if (node.VoxelBufDataCount == 0)    // empty nodes are ignored (can occur due to draw task alignment)
-        return false;
-    
-    //                                                      Meshlet                                                         Octree Node
-    float4 worldPosAndScale = GetRenderOption(0) ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
-    
-    // Calculate min Z value of the transformed bounding box
-    float4 clipPosVertices   = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
-    float  perspectiveDivide = 0.f;
-    float  minZ              = GetMinBoundVertex(worldPosAndScale, clipPosVertices);
-    
-    // Keep in mind, that maxY will be minY and the other way around, since clip space Y begins at the lower end of the screen,
-    // and screen space begins at the upper end of the screen
-    float2 upperLeftBounding    = float2(clipPosVertices.x, clipPosVertices.w);     // minX maxY
-    float2 upperRightBounding   = float2(clipPosVertices.y, clipPosVertices.w);     // maxX maxY
-    float2 lowerLeftBounding    = float2(clipPosVertices.x, clipPosVertices.z);     // minX minY
-    float2 lowerRightBounding   = float2(clipPosVertices.y, clipPosVertices.z);     // maxX minY
-    
-    // Now I have four ndc positions which are the corner positions of my minZ-rect
-    
-    // Convert NDC coordinates to UV space [0,1]
-    float2 upperLeftBoundingUV  = float2(upperLeftBounding.x  * 0.5 + 0.5, upperLeftBounding.y  * -0.5 + 0.5);
-    float2 upperRightBoundingUV = float2(upperRightBounding.x * 0.5 + 0.5, upperRightBounding.y * -0.5 + 0.5);
-    float2 lowerLeftBoundingUV  = float2(lowerLeftBounding.x  * 0.5 + 0.5, lowerLeftBounding.y  * -0.5 + 0.5);
-    float2 lowerRightBoundingUV = float2(lowerRightBounding.x * 0.5 + 0.5, lowerRightBounding.y * -0.5 + 0.5);
-    
-    uint numLevels = 1; // At least one mip level is assumed
-    uint outVar;
-    HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
-  
-    for (int mipLevel = max(numLevels - 3, 1); mipLevel >= 0; --mipLevel)
-    {
-        uint2 texDims;
-        HiZPyramid.GetDimensions(mipLevel, texDims.x, texDims.y, outVar);
-        
-        float hiZDepthUL = HiZPyramid.Load(float3(uint2(upperLeftBoundingUV * texDims), mipLevel));
-        float hiZDepthUR = HiZPyramid.Load(float3(uint2(upperRightBoundingUV * texDims), mipLevel));
-        float hiZDepthLL = HiZPyramid.Load(float3(uint2(lowerLeftBoundingUV * texDims), mipLevel));
-        float hiZDepthLR = HiZPyramid.Load(float3(uint2(lowerRightBoundingUV * texDims), mipLevel));
-        
-        float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
-        
-        if (maxHiZDepth + g_Constants.DepthBias < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
-            return false;            // Return: is not visible
-    }
-    
-    return true; // All mip levels have been traversed and the bounding box has not been found to be occluded
+    return VisibilityBuffer.Load(4 * gid) == 1;
 }
 
 // The number of cubes that are visible by the camera,
@@ -191,7 +83,7 @@ void main(in uint I  : SV_GroupIndex,
     cullVoxel += node.VoxelBufDataCount > 0 ? 0 : 1;
     cullVoxel += I < node.VoxelBufDataCount ? 0 : 1;
     cullVoxel += (GetRenderOption(2) || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(node, I)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(gid)) ? 0 : 1;
     cullVoxel += (GetRenderOption(3) == 0 || node.VoxelBufDataCount >= GROUP_SIZE) ? 0 : 1;
     
     if (cullVoxel == 0) // only draw valid voxels

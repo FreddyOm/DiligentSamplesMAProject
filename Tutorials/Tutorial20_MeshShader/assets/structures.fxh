@@ -45,6 +45,9 @@ struct Constants
                                 //              5 = MeshShadingDebugViz, 
                                 //              6 = OctreeDebugViz
                                 //          ]
+    
+    uint VoxelCount;
+    uint3 Padding;
 };
 
 // Payload size must be less than 16kb.

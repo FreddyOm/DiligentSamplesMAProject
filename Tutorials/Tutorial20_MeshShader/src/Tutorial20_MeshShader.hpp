@@ -58,19 +58,15 @@ namespace Diligent
         void CreateHiZMipGenerationPipeline(Diligent::ShaderCreateInfo& ShaderCI);
         void BindSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& sortedNodeBuffer);
         void BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer);
-        void BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes);
+        void BindVisibilityBuffer(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuffer);
         void CreateStatisticsBuffer();
         void CreateConstantsBuffer();
 
         void LoadTexture();
         void UpdateUI();
 
-        void WindowResize(Uint32 Width, Uint32 Height) override;
-
         // 2 Pass Depth OC
         void                   DepthPrepass();
-        void                   CreateHiZTextures();
-        void                   GenerateHiZ();
     
         RefCntAutoPtr<IBuffer>      m_CubeBuffer;
         RefCntAutoPtr<ITextureView> m_CubeTextureSRV;
@@ -85,18 +81,15 @@ namespace Diligent
     
         Uint32                 m_DrawTaskCount          = 0;
         Uint32                 m_DepthPassDrawTaskCount = 0;
+        Uint32                 m_DepthPassDrawTaskCountAligned = 0;
         float                  m_HiZSampleValue         = 0.f;
         float                  m_MinZValue              = 0.f;
         Uint32                 m_MipCount               = 0;
 
         RefCntAutoPtr<IBuffer> m_pVoxelPosBuffer;
-        RefCntAutoPtr<IBuffer> m_pBestOccluderBuffer;
         RefCntAutoPtr<IBuffer> m_pOctreeNodeBuffer;
         RefCntAutoPtr<IBuffer> m_pConstants;
-
-        RefCntAutoPtr<ITexture>                  m_pHiZPyramidTexture;
-        std::vector<RefCntAutoPtr<ITextureView>> m_HiZMipUAVs;
-
+        RefCntAutoPtr<IBuffer> m_pVisibilityBuffer;
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pSRB;

@@ -230,17 +230,20 @@ namespace Diligent
             VERIFY_EXPR(task.BasePositionAndScale.w >= 4);
         }
 
+
         // Bind buffer resources to GPU
         BindSortedIndexBuffer(orderedVoxelDataBuffer);
         BindOctreeNodeBuffer(OTLeafNodes);
-        BindBestOccluderBuffer(depthPrepassOTNodes);
+
+        m_DepthPassDrawTaskCount        = static_cast<Uint32>(orderedVoxelDataBuffer.size());
+        m_DepthPassDrawTaskCountAligned = (m_DepthPassDrawTaskCount / 64) + (ASGroupSize - ((m_DepthPassDrawTaskCount / 64) % ASGroupSize));
+        VERIFY_EXPR(m_DepthPassDrawTaskCountAligned % ASGroupSize == 0);
+
+        BindVisibilityBuffer(orderedVoxelDataBuffer);
         
         // Set draw task count
         m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size());
-        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
-
-        m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size());
-        VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
+        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);        
     }
 
     void Tutorial20_MeshShader::PopulateOctree(std::string OTmodelPath)
@@ -289,7 +292,7 @@ namespace Diligent
     void Tutorial20_MeshShader::BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
     {
         // Realign octree node buffer
-        octreeNodeBuffer.resize(octreeNodeBuffer.size() + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
+        //octreeNodeBuffer.resize(octreeNodeBuffer.size() + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
         VERIFY_EXPR(octreeNodeBuffer.size() % ASGroupSize == 0);
 
         BufferDesc BuffDesc;
@@ -308,28 +311,26 @@ namespace Diligent
         VERIFY_EXPR(m_pOctreeNodeBuffer != nullptr);
     }
     
-    void Tutorial20_MeshShader::BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes)
+    void Tutorial20_MeshShader::BindVisibilityBuffer(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuffer)
     {
-        if (depthPrepassOTNodes.size() == 0) return;
+        if (orderedVoxelDataBuffer.size() == 0) return;
 
-        // Realign deoth prepass octree node buffer
-        depthPrepassOTNodes.resize(depthPrepassOTNodes.size() + ASGroupSize - (depthPrepassOTNodes.size() % ASGroupSize));
-        VERIFY_EXPR(depthPrepassOTNodes.size() % ASGroupSize == 0);
+        std::vector<Uint32> vizBuf(orderedVoxelDataBuffer.size(), 0);
 
         BufferDesc BuffDesc;
-        BuffDesc.Name              = "Best occluder nodes buffer";
+        BuffDesc.Name              = "Visibility buffer";
         BuffDesc.Usage             = USAGE_DEFAULT;
-        BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
-        BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
-        BuffDesc.ElementByteStride = sizeof(depthPrepassOTNodes[0]);
-        BuffDesc.Size              = sizeof(depthPrepassOTNodes[0]) * static_cast<Uint32>(depthPrepassOTNodes.size());
+        BuffDesc.BindFlags         = BIND_UNORDERED_ACCESS;
+        BuffDesc.Mode              = BUFFER_MODE_RAW;
+        BuffDesc.ElementByteStride = sizeof(vizBuf[0]);
+        BuffDesc.Size              = sizeof(Uint32) * static_cast<Uint32>(vizBuf.size());
 
         BufferData BufData;
-        BufData.pData    = depthPrepassOTNodes.data();
+        BufData.pData    = vizBuf.data();
         BufData.DataSize = BuffDesc.Size;
 
-        m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pBestOccluderBuffer);
-        VERIFY_EXPR(m_pBestOccluderBuffer != nullptr);
+        m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pVisibilityBuffer);
+        VERIFY_EXPR(m_pVisibilityBuffer != nullptr);
     }
 
     void Tutorial20_MeshShader::CreatePipelineState()
@@ -388,17 +389,28 @@ namespace Diligent
             VERIFY_EXPR(pAS != nullptr);
         }
 
-        RefCntAutoPtr<IShader> pASBestOccluders;
+        RefCntAutoPtr<IShader> pASOcclusionQuery;
         {
             ShaderCI.Desc.ShaderType = SHADER_TYPE_AMPLIFICATION;
             ShaderCI.EntryPoint      = "main";
-            ShaderCI.Desc.Name       = "Mesh shader best occluders - AS";
-            ShaderCI.FilePath        = "cube_bestOC_ash.hlsl";
+            ShaderCI.Desc.Name       = "Mesh shader raster oc query - AS";
+            ShaderCI.FilePath        = "raster_oc_ash.hlsl";
 
-            m_pDevice->CreateShader(ShaderCI, &pASBestOccluders);
-            VERIFY_EXPR(pASBestOccluders != nullptr);
+            m_pDevice->CreateShader(ShaderCI, &pASOcclusionQuery);
+            VERIFY_EXPR(pASOcclusionQuery != nullptr);
         }
     
+        RefCntAutoPtr<IShader> pMSOcclusionQuery;
+        {
+            ShaderCI.Desc.ShaderType = SHADER_TYPE_MESH;
+            ShaderCI.EntryPoint      = "main";
+            ShaderCI.Desc.Name       = "Mesh shader raster oc query - MS";
+            ShaderCI.FilePath        = "raster_oc_msh.hlsl";
+
+            m_pDevice->CreateShader(ShaderCI, &pMSOcclusionQuery);
+            VERIFY_EXPR(pMSOcclusionQuery != nullptr);
+        }
+
         RefCntAutoPtr<IShader> pMS;
         {
             ShaderCI.Desc.ShaderType = SHADER_TYPE_MESH;
@@ -421,9 +433,6 @@ namespace Diligent
             VERIFY_EXPR(pPS != nullptr);
         }
 
-        // Create HiZ resources
-        CreateHiZTextures();
-
         // clang-format off
         // Define immutable sampler for g_Texture. Immutable samplers should be used whenever possible
         SamplerDesc SamLinearClampDesc
@@ -443,7 +452,7 @@ namespace Diligent
 
         ShaderResourceVariableDesc shaderResourceVariableDesc[1];
 
-        shaderResourceVariableDesc[0].Name         = "HiZPyramid";
+        shaderResourceVariableDesc[0].Name         = "VisibilityBuffer";
         shaderResourceVariableDesc[0].ShaderStages = SHADER_TYPE_AMPLIFICATION;
         shaderResourceVariableDesc[0].Type         = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
         shaderResourceVariableDesc[0].Flags        = SHADER_VARIABLE_FLAG_NONE;
@@ -470,8 +479,8 @@ namespace Diligent
         if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "OctreeNodes"))
             m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "OctreeNodes")->Set(m_pOctreeNodeBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
 
-        if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid"))
-            m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid")->Set(m_pHiZPyramidTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+        if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer"))
+            m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
 
         if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants"))
             m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants")->Set(m_pConstants);
@@ -486,37 +495,54 @@ namespace Diligent
             m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "cbConstants")->Set(m_pConstants);
 
 
-        CreateDepthPrepassPipeline(pASBestOccluders, pMS);
-        CreateHiZMipGenerationPipeline(ShaderCI);
+        CreateDepthPrepassPipeline(pASOcclusionQuery, pMSOcclusionQuery);
     }
 
-    void Tutorial20_MeshShader::CreateDepthPrepassPipeline(Diligent::RefCntAutoPtr<Diligent::IShader>& pASBestOccluders, Diligent::RefCntAutoPtr<Diligent::IShader>& pMS)
+    void Tutorial20_MeshShader::CreateDepthPrepassPipeline(Diligent::RefCntAutoPtr<Diligent::IShader>& pASOcclusionQuery, Diligent::RefCntAutoPtr<Diligent::IShader>& pMSOcclusionQuery)
     {
         // Create depth pass pipeline state
         GraphicsPipelineStateCreateInfo PSOCreateDepthOnlyPLInfo;
         PipelineStateDesc&              PSODepthOnlyPLDesc = PSOCreateDepthOnlyPLInfo.PSODesc;
 
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable      = true;
-        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthFunc        = COMPARISON_FUNC_LESS;
-
-        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBias            = 0;
-        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBiasClamp       = 0.0f;
-        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = 0.0f;
 
         // Disable color output
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.NumRenderTargets = 0;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RTVFormats[0]    = TEX_FORMAT_UNKNOWN;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DSVFormat        = m_pSwapChain->GetDesc().DepthBufferFormat;
 
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.CullMode             = CULL_MODE_BACK;
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.FillMode             = FILL_MODE_SOLID;
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBias            = 0;
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBiasClamp       = 0.0f;
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = 0.0f;
+
+        
         // Mesh shading pipeline setup
-        PSODepthOnlyPLDesc.Name                               = "Depth only pipeline";
+        PSODepthOnlyPLDesc.Name                               = "Raster occlusion pipeline";
         PSODepthOnlyPLDesc.PipelineType                       = PIPELINE_TYPE_MESH;
         PSODepthOnlyPLDesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
 
+        ShaderResourceVariableDesc shaderResourceVariableDesc[2];
+
+        shaderResourceVariableDesc[0].Name         = "VisibilityBuffer";
+        shaderResourceVariableDesc[0].ShaderStages = SHADER_TYPE_AMPLIFICATION;
+        shaderResourceVariableDesc[0].Type         = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
+        shaderResourceVariableDesc[0].Flags        = SHADER_VARIABLE_FLAG_NONE;
+
+        shaderResourceVariableDesc[1].Name         = "VisibilityBuffer";
+        shaderResourceVariableDesc[1].ShaderStages = SHADER_TYPE_MESH;
+        shaderResourceVariableDesc[1].Type         = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
+        shaderResourceVariableDesc[1].Flags        = SHADER_VARIABLE_FLAG_NONE;
+
+        PSOCreateDepthOnlyPLInfo.PSODesc.ResourceLayout.Variables = &shaderResourceVariableDesc[0];
+        PSOCreateDepthOnlyPLInfo.PSODesc.ResourceLayout.NumVariables = _countof(shaderResourceVariableDesc);
+
         // No pixel shader needed for basic depth-only pass
-        PSOCreateDepthOnlyPLInfo.pAS = pASBestOccluders;
-        PSOCreateDepthOnlyPLInfo.pMS = pMS;
+        PSOCreateDepthOnlyPLInfo.pAS = pASOcclusionQuery;
+        PSOCreateDepthOnlyPLInfo.pMS = pMSOcclusionQuery;
         PSOCreateDepthOnlyPLInfo.pPS = nullptr;
 
         // Create the pipeline state
@@ -529,30 +555,20 @@ namespace Diligent
 
         // Bind resources
 
-        if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "BestOccluders"))
-            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "BestOccluders")->Set(m_pBestOccluderBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+       if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer"))
+            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer")->Set(m_pVoxelPosBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+
+        if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer"))
+            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
 
         if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants"))
             m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants")->Set(m_pConstants);
 
+       if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "VisibilityBuffer"))
+            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
+
         if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants"))
             m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
-
-        // Set State transitions
-        m_TransitionBarrier[0]                = {};
-        m_TransitionBarrier[0].pResource      = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
-        m_TransitionBarrier[0].OldState       = RESOURCE_STATE_DEPTH_WRITE;
-        m_TransitionBarrier[0].NewState       = RESOURCE_STATE_COPY_SOURCE;
-        m_TransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-        m_TransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-
-
-        m_ResetTransitionBarrier[0]                = {};
-        m_ResetTransitionBarrier[0].pResource      = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
-        m_ResetTransitionBarrier[0].OldState       = RESOURCE_STATE_UNKNOWN;
-        m_ResetTransitionBarrier[0].NewState       = RESOURCE_STATE_DEPTH_WRITE;
-        m_ResetTransitionBarrier[0].TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-        m_ResetTransitionBarrier[0].Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
     }
 
     void Tutorial20_MeshShader::CreateHiZMipGenerationPipeline(Diligent::ShaderCreateInfo& ShaderCI)
@@ -630,147 +646,15 @@ namespace Diligent
 
         // Draw best occluders. Task count doesn't change, since the buffers are all the same, we just discard 
         // more invocations.
-        VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
+        VERIFY_EXPR(m_DepthPassDrawTaskCountAligned % ASGroupSize == 0);
 
-        DrawMeshAttribs drawAttrs{m_DepthPassDrawTaskCount, DRAW_FLAG_VERIFY_ALL};
+        DrawMeshAttribs drawAttrs{m_DepthPassDrawTaskCountAligned, DRAW_FLAG_VERIFY_ALL};
         m_pImmediateContext->DrawMesh(drawAttrs);
         
         // Unset depth buffer when copying
         m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
-
-        // Copy and store best occluder depth buffer
-        CopyTextureAttribs storeDepthBufAttribs{};
-        storeDepthBufAttribs.pSrcTexture              = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
-        storeDepthBufAttribs.pDstTexture              = m_pHiZPyramidTexture;
-        storeDepthBufAttribs.SrcTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-        storeDepthBufAttribs.DstTextureTransitionMode = RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-        storeDepthBufAttribs.DstMipLevel              = 0;
-
-        m_pImmediateContext->CopyTexture(storeDepthBufAttribs);
-
-        // Generate HiZ and set compute shader resources accordingly
-        GenerateHiZ();
     }
 
-    void Tutorial20_MeshShader::CreateHiZTextures()
-    {
-        if (m_pHiZPyramidTexture.RawPtr() != nullptr)
-            m_pHiZPyramidTexture.Release();
-
-        m_HiZMipUAVs.clear();
-
-        const uint32_t BaseWidth  = m_pSwapChain->GetDesc().Width;
-        const uint32_t BaseHeight = m_pSwapChain->GetDesc().Height;
-
-        // Calculate the number of mip levels
-        uint32_t MipLevelCount = 1 + static_cast<uint32_t>(floor(log2((std::max)(BaseWidth, BaseHeight))));
-        VERIFY_EXPR(MipLevelCount > 0);
-
-        // Create texture resource
-        TextureDesc HiZTexDesc;
-        HiZTexDesc.Type      = RESOURCE_DIM_TEX_2D;
-        HiZTexDesc.Width     = BaseWidth;
-        HiZTexDesc.Height    = BaseHeight;
-        HiZTexDesc.Format    = TEX_FORMAT_R32_FLOAT;
-        HiZTexDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_UNORDERED_ACCESS;
-        HiZTexDesc.Usage     = USAGE_DYNAMIC;
-        HiZTexDesc.MipLevels = MipLevelCount;
-
-        m_pDevice->CreateTexture(HiZTexDesc, nullptr, &m_pHiZPyramidTexture);
-        VERIFY_EXPR(m_pHiZPyramidTexture != nullptr);
-
-        // Create UAVs and SRVs for each mip level
-        m_HiZMipUAVs.resize(MipLevelCount);
-
-        for (uint32_t mip = 0; mip < MipLevelCount; ++mip)
-        {
-            TextureViewDesc UAVDesc;
-            UAVDesc.ViewType        = TEXTURE_VIEW_UNORDERED_ACCESS;
-            UAVDesc.TextureDim      = RESOURCE_DIM_TEX_2D;
-            UAVDesc.MostDetailedMip = mip;
-            UAVDesc.NumMipLevels    = 1;
-            m_pHiZPyramidTexture->CreateView(UAVDesc, &m_HiZMipUAVs[mip]);
-            VERIFY_EXPR(m_HiZMipUAVs[mip] != nullptr);
-        }
-        
-        StateTransitionDesc HiZTexBarrier{};
-        HiZTexBarrier.pResource = m_pHiZPyramidTexture;
-        HiZTexBarrier.OldState = RESOURCE_STATE_UNKNOWN;
-        HiZTexBarrier.NewState = RESOURCE_STATE_SHADER_RESOURCE;
-        HiZTexBarrier.Flags = STATE_TRANSITION_FLAG_UPDATE_STATE;
-        
-        m_pImmediateContext->TransitionResourceStates(1, &HiZTexBarrier);
-
-        if (m_pSRB != nullptr)
-            m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    }
-
-    void Tutorial20_MeshShader::GenerateHiZ()
-    {
-        StateTransitionDesc HiZResourceBarrier;
-        HiZResourceBarrier.pResource      = m_pHiZPyramidTexture;
-        HiZResourceBarrier.OldState       = RESOURCE_STATE_COPY_DEST;
-        HiZResourceBarrier.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
-        HiZResourceBarrier.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-        HiZResourceBarrier.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-        m_pImmediateContext->TransitionResourceStates(1, &HiZResourceBarrier);
-
-        // Set pipeline state and commit shader resources
-        m_pImmediateContext->SetPipelineState(m_pHiZComputePSO);
-        m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);
-
-        const auto& TexDesc = m_pHiZPyramidTexture->GetDesc();
-
-        static uint32_t ThreadGroupSize = 32;
-
-        // Start with the level 1 since level 0 is a direct copy of the depth buffer
-        for (Uint32 mipLevel = 1; mipLevel < TexDesc.MipLevels; ++mipLevel)
-        {
-            uint32_t InputWidth   = (std::max)(TexDesc.Width >> (mipLevel - 1), 1u);
-            uint32_t InputHeight  = (std::max)(TexDesc.Height >> (mipLevel - 1), 1u);
-            uint32_t OutputWidth  = (std::max)(TexDesc.Width >> mipLevel, 1u);
-            uint32_t OutputHeight = (std::max)(TexDesc.Height >> mipLevel, 1u);
-
-            uint32_t GroupsX = (OutputWidth + ThreadGroupSize - 1) / ThreadGroupSize;
-            uint32_t GroupsY = (OutputHeight + ThreadGroupSize - 1) / ThreadGroupSize;
-            
-            // Early exit when GroupsX or GroupsY become 0
-            if ((std::max)(GroupsX, GroupsY) == 0) break;
-
-            // Update const buffer data and map data to GPU memory
-            {
-                MapHelper<HiZConstants> Constants(m_pImmediateContext, m_pHiZConstantBuffer, MAP_WRITE, MAP_FLAG_DISCARD);
-                Constants->InputDimensions  = uint2(InputWidth, InputHeight);
-                Constants->OutputDimensions = uint2(OutputWidth, OutputHeight);
-                Constants->Level            = mipLevel;
-            }
-            
-             // Set the input and  output shader resources
-            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "InputTexture")->Set(m_HiZMipUAVs[mipLevel - 1]);
-            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "Constants")->Set(m_pHiZConstantBuffer);
-            m_pHiZComputeSRB->GetVariableByName(SHADER_TYPE_COMPUTE, "OutputTexture")->Set(m_HiZMipUAVs[mipLevel]);
-
-            m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-            // Dispatch compute shader
-            DispatchComputeAttribs dispatchAttribs(GroupsX, GroupsY, 1);
-            m_pImmediateContext->DispatchCompute(dispatchAttribs);
-        }
-
-        // Transition to unordered access
-        StateTransitionDesc HiZResourceBarrier2;
-        HiZResourceBarrier2.pResource      = m_pHiZPyramidTexture;
-        HiZResourceBarrier2.OldState       = RESOURCE_STATE_UNKNOWN;
-        HiZResourceBarrier2.NewState       = RESOURCE_STATE_UNORDERED_ACCESS;
-        HiZResourceBarrier2.TransitionType = STATE_TRANSITION_TYPE_IMMEDIATE;
-        HiZResourceBarrier2.Flags          = STATE_TRANSITION_FLAG_UPDATE_STATE;
-        m_pImmediateContext->TransitionResourceStates(1, &HiZResourceBarrier2);
-        m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);
-
-        // Flush the context to ensure all commands are executed
-        m_pImmediateContext->Flush();
-    }
-    
     void Tutorial20_MeshShader::UpdateUI()
     {
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
@@ -817,11 +701,6 @@ namespace Diligent
             ImGui::Text("Visible octree nodes: %d", m_VisibleOTNodes);
         }
         ImGui::End();
-    }
-
-    void Tutorial20_MeshShader::WindowResize(Uint32 Width, Uint32 Height)
-    {
-        CreateHiZTextures();
     }
     
     void Tutorial20_MeshShader::ModifyEngineInitInfo(const ModifyEngineInitInfoAttribs& Attribs)
@@ -870,6 +749,7 @@ namespace Diligent
             CBConstants->ViewProjMat    = m_ViewProjMatrix.Transpose();
 
             CBConstants->DepthBias      = m_OCThreshold;
+            CBConstants->VoxelCount     = m_DepthPassDrawTaskCount; 
             
             CBConstants->RenderOptions = 0;
             CBConstants->RenderOptions |= (m_CullMode << 0);
@@ -906,7 +786,7 @@ namespace Diligent
         // Reset pipeline state to normally draw to back buffer
         m_pImmediateContext->SetPipelineState(m_pPSO);
 
-        m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid")->Set(m_pHiZPyramidTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+        m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
         
         m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

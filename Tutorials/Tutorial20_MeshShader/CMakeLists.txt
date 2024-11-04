@@ -26,6 +26,8 @@ set(SHADERS
     assets/cube_psh.hlsl
     assets/structures.fxh
     assets/generate_HiZ.hlsl
+    assets/raster_oc_ash.hlsl
+    assets/raster_oc_msh.hlsl
 )
 
 set(ASSETS
