@@ -193,11 +193,8 @@ namespace Diligent
         depthPrepassOTNodes.reserve(OTLeafNodes.size());
         
         {
-            // Buffer to avoid duplicate entries of voxels into the ordered voxel data buffer
-            std::vector<char> duplicateBuffer(OTVoxelBoundBuffer.size(), 0); // Can be discarded after QueryAllNodes
-
             // Visist all nodes and fill the given buffers with data
-            m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, duplicateBuffer, OTLeafNodes);
+            m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
             VERIFY_EXPR(orderedVoxelDataBuffer.size() > 0 && OTLeafNodes.size() > 0);
 
             // Visit all nodes and search for "full" nodes
