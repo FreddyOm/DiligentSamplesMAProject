@@ -98,7 +98,7 @@ float GetMinBoundVertex(float4 BasePosAndScale, out float4 minXmaxXminYmaxY)
     minXmaxXminYmaxY.z = min(min(min(clipPos1.y, clipPos2.y), min(clipPos3.y, clipPos4.y)), minXmaxXminYmaxY.z);
     minXmaxXminYmaxY.w = max(max(max(clipPos1.y, clipPos2.y), max(clipPos3.y, clipPos4.y)), minXmaxXminYmaxY.w);
     
-    float minZ2 = min(min(min(clipPos1.z, clipPos2.z), min(clipPos3.z, clipPos4.z)), minZ);
+    float minZ2 = min(min(clipPos1.z, clipPos2.z), min(clipPos3.z, clipPos4.z));
     
     return saturate(min(minZ, minZ2));
 }

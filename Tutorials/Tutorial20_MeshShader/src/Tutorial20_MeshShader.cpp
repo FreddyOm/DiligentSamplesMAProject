@@ -851,7 +851,7 @@ namespace Diligent
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
         // Clear the back buffer and depth buffer
         //const float ClearColor[] = {0.350f, 0.350f, 0.350f, 1.0f};
-        const float ClearColor[] = {0.1f, 0.1f, 0.1f, 1.0f};
+        const float ClearColor[] = {0.05f, 0.05f, 0.05f, 1.0f};
         
         m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
