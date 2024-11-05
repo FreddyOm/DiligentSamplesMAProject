@@ -54,11 +54,13 @@ namespace Diligent
         void CreateDrawTasks();
         
         void CreatePipelineState();
-        void CreateDepthPrepassPipeline(Diligent::RefCntAutoPtr<Diligent::IShader>& pASBestOccluders, Diligent::RefCntAutoPtr<Diligent::IShader>& pMS);
+        void CreateDepthPrepassPipeline(Diligent::RefCntAutoPtr<Diligent::IShader>& pASDepthPass, Diligent::RefCntAutoPtr<Diligent::IShader>& pMSDepthPass, 
+            Diligent::RefCntAutoPtr<Diligent::IShader>& pASVisibilityQuery, Diligent::RefCntAutoPtr<Diligent::IShader>& pMSVisibilityQuery);
         void CreateHiZMipGenerationPipeline(Diligent::ShaderCreateInfo& ShaderCI);
         void BindSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& sortedNodeBuffer);
         void BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer);
         void BindVisibilityBuffer(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuffer);
+        void BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes);
         void CreateStatisticsBuffer();
         void CreateConstantsBuffer();
 
@@ -90,12 +92,16 @@ namespace Diligent
         RefCntAutoPtr<IBuffer> m_pOctreeNodeBuffer;
         RefCntAutoPtr<IBuffer> m_pConstants;
         RefCntAutoPtr<IBuffer> m_pVisibilityBuffer;
+        RefCntAutoPtr<IBuffer> m_pBestOccluderBuffer;
 
         RefCntAutoPtr<IPipelineState>         m_pPSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pSRB;
 
-        RefCntAutoPtr<IPipelineState> m_pDepthOnlyPSO;
-        RefCntAutoPtr<IShaderResourceBinding> m_pDepthOnlySRB;
+        RefCntAutoPtr<IPipelineState> m_pVisibilityBufPSO;
+        RefCntAutoPtr<IShaderResourceBinding> m_pVisibilityBufSRB;
+
+        RefCntAutoPtr<IPipelineState>         m_pBestOccludersPSO;
+        RefCntAutoPtr<IShaderResourceBinding> m_pBestOccludersSRB;
     
         RefCntAutoPtr<IPipelineState>         m_pHiZComputePSO;
         RefCntAutoPtr<IShaderResourceBinding> m_pHiZComputeSRB;

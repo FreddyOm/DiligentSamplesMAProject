@@ -75,15 +75,13 @@ void main(in uint I  : SV_GroupIndex,
     OctreeLeafNode node = OctreeNodes[wg];
     
     float meshletColorRndValue = node.RandomValue.x;
-    int taskCount = (int) node.RandomValue.y;
-    int padding = (int) node.RandomValue.z;
 
     // Access node indices for each thread    
     uint cullVoxel = 0;
     cullVoxel += node.VoxelBufDataCount > 0 ? 0 : 1;
     cullVoxel += I < node.VoxelBufDataCount ? 0 : 1;
     cullVoxel += (GetRenderOption(2) || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(gid)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(node.VoxelBufStartIndex + I)) ? 0 : 1;
     cullVoxel += (GetRenderOption(3) == 0 || node.VoxelBufDataCount >= GROUP_SIZE) ? 0 : 1;
     
     if (cullVoxel == 0) // only draw valid voxels

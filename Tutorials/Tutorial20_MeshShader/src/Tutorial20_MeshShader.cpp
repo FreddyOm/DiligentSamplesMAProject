@@ -240,6 +240,7 @@ namespace Diligent
         VERIFY_EXPR(m_DepthPassDrawTaskCountAligned % ASGroupSize == 0);
 
         BindVisibilityBuffer(orderedVoxelDataBuffer);
+        BindBestOccluderBuffer(depthPrepassOTNodes);
         
         // Set draw task count
         m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size());
@@ -333,10 +334,33 @@ namespace Diligent
         VERIFY_EXPR(m_pVisibilityBuffer != nullptr);
     }
 
+    void Tutorial20_MeshShader::BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes)
+    {
+        if (depthPrepassOTNodes.size() == 0) return;
+
+        // Realign depth prepass octree node buffer
+        VERIFY_EXPR(depthPrepassOTNodes.size() % ASGroupSize == 0);
+
+        BufferDesc BuffDesc;
+        BuffDesc.Name              = "Best occluder nodes buffer";
+        BuffDesc.Usage             = USAGE_DEFAULT;
+        BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
+        BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
+        BuffDesc.ElementByteStride = sizeof(depthPrepassOTNodes[0]);
+        BuffDesc.Size              = sizeof(Uint32) * static_cast<Uint32>(depthPrepassOTNodes.size());
+
+        BufferData BufData;
+        BufData.pData    = depthPrepassOTNodes.data();
+        BufData.DataSize = BuffDesc.Size;
+
+        m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pBestOccluderBuffer);
+        VERIFY_EXPR(m_pBestOccluderBuffer != nullptr);
+
+    }
+
     void Tutorial20_MeshShader::CreatePipelineState()
     {
         // Pipeline state object encompasses configuration of all GPU stages
-    
         GraphicsPipelineStateCreateInfo PSOCreateInfo;
         PipelineStateDesc&              PSODesc = PSOCreateInfo.PSODesc;
     
@@ -398,6 +422,17 @@ namespace Diligent
 
             m_pDevice->CreateShader(ShaderCI, &pASOcclusionQuery);
             VERIFY_EXPR(pASOcclusionQuery != nullptr);
+        }
+
+        RefCntAutoPtr<IShader> pASBestOccluders;
+        {
+            ShaderCI.Desc.ShaderType = SHADER_TYPE_AMPLIFICATION;
+            ShaderCI.EntryPoint      = "main";
+            ShaderCI.Desc.Name       = "Mesh shader draw best occ - AS";
+            ShaderCI.FilePath        = "cube_bestOC_ash.hlsl";
+
+            m_pDevice->CreateShader(ShaderCI, &pASBestOccluders);
+            VERIFY_EXPR(pASBestOccluders != nullptr);
         }
     
         RefCntAutoPtr<IShader> pMSOcclusionQuery;
@@ -495,80 +530,97 @@ namespace Diligent
             m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "cbConstants")->Set(m_pConstants);
 
 
-        CreateDepthPrepassPipeline(pASOcclusionQuery, pMSOcclusionQuery);
+        CreateDepthPrepassPipeline(pASBestOccluders, pMS, pASOcclusionQuery, pMSOcclusionQuery);
     }
 
-    void Tutorial20_MeshShader::CreateDepthPrepassPipeline(Diligent::RefCntAutoPtr<Diligent::IShader>& pASOcclusionQuery, Diligent::RefCntAutoPtr<Diligent::IShader>& pMSOcclusionQuery)
+    void Tutorial20_MeshShader::CreateDepthPrepassPipeline(Diligent::RefCntAutoPtr<Diligent::IShader>& pASDepthPass, Diligent::RefCntAutoPtr<Diligent::IShader>& pMSDepthPass, 
+        Diligent::RefCntAutoPtr<Diligent::IShader>& pASVisibilityQuery, Diligent::RefCntAutoPtr<Diligent::IShader>& pMSVisibilityQuery)
     {
         // Create depth pass pipeline state
         GraphicsPipelineStateCreateInfo PSOCreateDepthOnlyPLInfo;
         PipelineStateDesc&              PSODepthOnlyPLDesc = PSOCreateDepthOnlyPLInfo.PSODesc;
 
+        // Best Occluders pass
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable      = true;
-        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthFunc        = COMPARISON_FUNC_LESS;
 
         // Disable color output
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.NumRenderTargets = 0;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RTVFormats[0]    = TEX_FORMAT_UNKNOWN;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DSVFormat        = m_pSwapChain->GetDesc().DepthBufferFormat;
-
+        
+        // Raster config
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.CullMode             = CULL_MODE_BACK;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.FillMode             = FILL_MODE_SOLID;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBias            = 0;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.DepthBiasClamp       = 0.0f;
         PSOCreateDepthOnlyPLInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = 0.0f;
 
-        
         // Mesh shading pipeline setup
         PSODepthOnlyPLDesc.Name                               = "Raster occlusion pipeline";
         PSODepthOnlyPLDesc.PipelineType                       = PIPELINE_TYPE_MESH;
         PSODepthOnlyPLDesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE;
 
-        ShaderResourceVariableDesc shaderResourceVariableDesc[2];
+        // No pixel shader needed for basic depth-only pass
+        PSOCreateDepthOnlyPLInfo.pAS = pASDepthPass;
+        PSOCreateDepthOnlyPLInfo.pMS = pMSDepthPass;
+        PSOCreateDepthOnlyPLInfo.pPS = nullptr;
+            
+        m_pBestOccludersPSO;
+        m_pBestOccludersSRB;
 
-        shaderResourceVariableDesc[0].Name         = "VisibilityBuffer";
-        shaderResourceVariableDesc[0].ShaderStages = SHADER_TYPE_AMPLIFICATION;
-        shaderResourceVariableDesc[0].Type         = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
-        shaderResourceVariableDesc[0].Flags        = SHADER_VARIABLE_FLAG_NONE;
 
-        shaderResourceVariableDesc[1].Name         = "VisibilityBuffer";
-        shaderResourceVariableDesc[1].ShaderStages = SHADER_TYPE_MESH;
-        shaderResourceVariableDesc[1].Type         = SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC;
-        shaderResourceVariableDesc[1].Flags        = SHADER_VARIABLE_FLAG_NONE;
+        // Create the pipeline state
+        m_pDevice->CreateGraphicsPipelineState(PSOCreateDepthOnlyPLInfo, &m_pBestOccludersPSO);
+        VERIFY_EXPR(m_pBestOccludersPSO != nullptr);
 
-        PSOCreateDepthOnlyPLInfo.PSODesc.ResourceLayout.Variables = &shaderResourceVariableDesc[0];
-        PSOCreateDepthOnlyPLInfo.PSODesc.ResourceLayout.NumVariables = _countof(shaderResourceVariableDesc);
+        // Create and populate the SRB
+        m_pVisibilityBufPSO->CreateShaderResourceBinding(&m_pBestOccludersSRB, true);
+        VERIFY_EXPR(m_pBestOccludersSRB != nullptr);
+
+        // Bind resources
+        m_pBestOccludersSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "BestOccluders")->Set(m_pBestOccluderBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+        m_pBestOccludersSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants")->Set(m_pConstants);
+        m_pBestOccludersSRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
+
+
+        // VisibilityBuf
+        
+        // Disable depth write, only comparison is needed
+        PSOCreateDepthOnlyPLInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
 
         // No pixel shader needed for basic depth-only pass
-        PSOCreateDepthOnlyPLInfo.pAS = pASOcclusionQuery;
-        PSOCreateDepthOnlyPLInfo.pMS = pMSOcclusionQuery;
+        PSOCreateDepthOnlyPLInfo.pAS = pASVisibilityQuery;
+        PSOCreateDepthOnlyPLInfo.pMS = pMSVisibilityQuery;
         PSOCreateDepthOnlyPLInfo.pPS = nullptr;
 
         // Create the pipeline state
-        m_pDevice->CreateGraphicsPipelineState(PSOCreateDepthOnlyPLInfo, &m_pDepthOnlyPSO);
-        VERIFY_EXPR(m_pDepthOnlyPSO != nullptr);
+        m_pDevice->CreateGraphicsPipelineState(PSOCreateDepthOnlyPLInfo, &m_pVisibilityBufPSO);
+        VERIFY_EXPR(m_pVisibilityBufPSO != nullptr);
 
         // Create and populate the SRB
-        m_pDepthOnlyPSO->CreateShaderResourceBinding(&m_pDepthOnlySRB, true);
-        VERIFY_EXPR(m_pDepthOnlySRB != nullptr);
+        m_pVisibilityBufPSO->CreateShaderResourceBinding(&m_pVisibilityBufSRB, true);
+        VERIFY_EXPR(m_pVisibilityBufSRB != nullptr);
 
         // Bind resources
+        if (m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer"))
+            m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer")->Set(m_pVoxelPosBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
 
-       if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer"))
-            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer")->Set(m_pVoxelPosBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
+        if (m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "OctreeNodes"))
+            m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "OctreeNodes")->Set(m_pOctreeNodeBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
 
-        if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer"))
-            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
+        if (m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer"))
+            m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
 
-        if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants"))
-            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants")->Set(m_pConstants);
+        if (m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants"))
+            m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "cbConstants")->Set(m_pConstants);
 
-       if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "VisibilityBuffer"))
-            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
+       if (m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_MESH, "VisibilityBuffer"))
+            m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_MESH, "VisibilityBuffer")->Set(m_pVisibilityBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
 
-        if (m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants"))
-            m_pDepthOnlySRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
+        if (m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants"))
+            m_pVisibilityBufSRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
     }
 
     void Tutorial20_MeshShader::CreateHiZMipGenerationPipeline(Diligent::ShaderCreateInfo& ShaderCI)
@@ -636,23 +688,49 @@ namespace Diligent
 
     void Tutorial20_MeshShader::DepthPrepass()
     {
-        m_pImmediateContext->SetPipelineState(m_pDepthOnlyPSO);
-        m_pImmediateContext->CommitShaderResources(m_pDepthOnlySRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->SetPipelineState(m_pBestOccludersPSO);
+        m_pImmediateContext->CommitShaderResources(m_pBestOccludersSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
         // Set depth-stencil view
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
-        //m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
         m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-        // Draw best occluders. Task count doesn't change, since the buffers are all the same, we just discard 
-        // more invocations.
-        VERIFY_EXPR(m_DepthPassDrawTaskCountAligned % ASGroupSize == 0);
+        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
 
-        DrawMeshAttribs drawAttrs{m_DepthPassDrawTaskCountAligned, DRAW_FLAG_VERIFY_ALL};
+        DrawMeshAttribs drawAttrs{m_DrawTaskCount, DRAW_FLAG_VERIFY_ALL};
         m_pImmediateContext->DrawMesh(drawAttrs);
+
+        // Flush and switch to occlusion queries
+        m_pImmediateContext->Flush();
+
+        m_pImmediateContext->SetPipelineState(m_pVisibilityBufPSO);
+        m_pImmediateContext->CommitShaderResources(m_pVisibilityBufSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+        RefCntAutoPtr<IQuery> vizQuery;
+        {
+            QueryDesc queryDesc;
+            queryDesc.Name = "Visibility query";
+            queryDesc.Type = QUERY_TYPE_BINARY_OCCLUSION;
+
+            m_pDevice->CreateQuery(queryDesc, &vizQuery);
+            VERIFY_EXPR(vizQuery != nullptr);
+        }
+
+        QueryDataBinaryOcclusion queryData;
         
+        m_pImmediateContext->BeginQuery(vizQuery);
+
+        vizQuery->GetData(&queryData, sizeof(queryData));
+        
+
+        m_pImmediateContext->EndQuery(vizQuery);
+
+
+
+
+
         // Unset depth buffer when copying
-        m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
+        //m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
     }
 
     void Tutorial20_MeshShader::UpdateUI()

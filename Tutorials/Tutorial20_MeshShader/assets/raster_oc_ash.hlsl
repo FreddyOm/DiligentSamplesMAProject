@@ -1,12 +1,14 @@
 #include "structures.fxh"
 
-
 cbuffer cbConstants
 {
 	Constants g_Constants;
 }
 
 StructuredBuffer<VoxelBufData> VoxelPositionBuffer : register(t0);
+
+// Octree nodes
+StructuredBuffer<OctreeLeafNode> OctreeNodes : register(t1);
 
 // Occlusion results
 RWByteAddressBuffer VisibilityBuffer : register(u0);
@@ -26,16 +28,16 @@ void main(in uint I : SV_GroupIndex,
     // Flush the cache and synchronize
     GroupMemoryBarrierWithGroupSync();
 
-    const uint gid = wg * GROUP_SIZE + I;
+    const uint gid = wg * GROUP_SIZE + I;    
+    OctreeLeafNode node = OctreeNodes[wg];
     
-    VisibilityBuffer.Store(gid * 4, 0); // Reset visibility buffer. @TODO: Maybe Store4 ?
+    VisibilityBuffer.Store(4 * gid, 0); // Reset visibility buffer. @TODO: Maybe Store4 ?
     
-    
-    if (gid < g_Constants.VoxelCount)
+    if (node.VoxelBufDataCount > 0 && I < node.VoxelBufDataCount)
     {
-        VoxelBufData node = VoxelPositionBuffer[gid];
-        float3 pos = node.BasePosAndScale.xyz;
-        float scale = node.BasePosAndScale.w;
+        VoxelBufData voxel = VoxelPositionBuffer[node.VoxelBufStartIndex + I];
+        float3 pos = voxel.BasePosAndScale.xyz;
+        float scale = voxel.BasePosAndScale.w;
         
         uint index = 0;
         InterlockedAdd(s_TaskCount, 1, index);
@@ -45,7 +47,7 @@ void main(in uint I : SV_GroupIndex,
         s_Payload.PosY[index] = pos.y;
         s_Payload.PosZ[index] = pos.z;
         s_Payload.Scale[index] = scale;
-        s_Payload.MSRand[index] = 0.0f;
+        s_Payload.MSRand[index] = gid;
     }   
     
     

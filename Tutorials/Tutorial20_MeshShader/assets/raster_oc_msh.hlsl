@@ -61,6 +61,7 @@ struct PSInput
 [outputtopology("triangle")] // output primitive type is triangle list
 void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader output (0 .. 23)
           in uint gid : SV_GroupID, // work group index used to access amplification shader output (0 .. s_TaskCount-1)
+          in uint globalID : SV_DispatchThreadID,
           in payload Payload payload, // entire amplification shader output can be accessed by the mesh shader
           out indices uint3 tris[12],
           out vertices PSInput verts[24])
@@ -88,6 +89,6 @@ void main(in uint I : SV_GroupIndex, // thread index used to access mesh shader 
     }
     
     // If still computed, its visible.
-    VisibilityBuffer.Store(4 * gid, 1);
+    VisibilityBuffer.Store(4 * ((uint)payload.MSRand[gid]), 1);
 
 }
