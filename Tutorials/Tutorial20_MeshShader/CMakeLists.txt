@@ -33,6 +33,9 @@ set(ASSETS
     assets/models/suzanne.fbx
     assets/models/sponza.fbx
     assets/models/suzanne.binvox
+    assets/models/window_256.binvox
+    assets/models/window_512.binvox
+    assets/models/torus.binvox
 )
 
 add_sample_app("Tutorial20_MeshShader" "DiligentSamples/Tutorials" "${SOURCE}" "${INCLUDE}" "${SHADERS}" "${ASSETS}")

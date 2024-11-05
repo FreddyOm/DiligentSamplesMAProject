@@ -839,7 +839,7 @@ namespace Diligent
     
         LoadTexture();
         //CreateDrawTasks();
-        CreateDrawTasksFromMesh("models/lucy.binvox");
+        CreateDrawTasksFromMesh("models/window_512.binvox");
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
         CreatePipelineState();
