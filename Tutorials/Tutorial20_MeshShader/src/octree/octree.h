@@ -225,30 +225,69 @@ public:
     */
 
     // A tight node is a leaf node which is not bigger than the boundaries of the individual voxels summed! 
-    bool IsTight()
+   /* bool IsTight() const
     {
         double exp = 1.0 / 3.0;
         double base = maxObjectsPerLeaf;
-
+        
         float boundDimension = (bounds.max.x - bounds.min.x);
+        double overfullVoxelDimension = std::ceil((GetVoxelSize() * 2) * pow(base, exp));
+        
+        return boundDimension <= overfullVoxelDimension;
+    }*/
+
+    bool IsTight() const
+    {
+        VERIFY_EXPR(isLeaf);
+
+        double exp  = 1.0 / 3.0;
+        double base = maxObjectsPerLeaf;
+
+        float  boundDimension         = (bounds.max.x - bounds.min.x);
         double overfullVoxelDimension = std::ceil((GetVoxelSize() * 2) * pow(base, exp));
 
         return boundDimension <= overfullVoxelDimension;
     }
 
-    bool IsFull()
+    bool IsLeafAndTight() const
     {
-        // Node is either full when voxel count is maximum voxel count and node is tight
-        if (objectIndices.size() >= maxObjectsPerLeaf && IsTight())
-            return true;
+        if (!isLeaf) return false;
 
-        // Or if all children are full
-        for (auto* child : children)
+        return IsTight();
+    }
+
+    /// <summary>
+    ///  A node is full if it is completely filled with voxels, without holes or empty spaces.
+    /// </summary>
+    /// <returns>True, if full, false if not</returns>
+    bool IsFull() const
+    {
+        // Node is leaf and holds the maximum amount of voxels per leaf
+        if (IsLeafAndTight() && objectIndices.size() >= maxObjectsPerLeaf)
         {
-            if (child == nullptr || !child->IsFull())
-                return false;
+            return true;
         }
-        
-        return true;
+        else if (isLeaf)
+        {
+            return false;
+        }
+        else if (!isLeaf)
+        {
+            // If not a leaf node, check if all children are full
+            bool allChildrenFull = true;
+            for (auto* child : children)    // No check for children necessary since this is not a leaf node!
+            {
+                VERIFY_EXPR(child != nullptr);
+
+                if (!child->IsFull())
+                    allChildrenFull = false;
+            }
+
+            return allChildrenFull;
+        }
+
+        VERIFY_EXPR(false); // Shouldn't be here!
+ 
+        return false;
     }
 };
