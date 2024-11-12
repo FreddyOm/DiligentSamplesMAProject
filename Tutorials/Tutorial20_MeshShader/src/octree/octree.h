@@ -274,16 +274,15 @@ public:
         else if (!isLeaf)
         {
             // If not a leaf node, check if all children are full
-            bool allChildrenFull = true;
             for (auto* child : children)    // No check for children necessary since this is not a leaf node!
             {
                 VERIFY_EXPR(child != nullptr);
 
                 if (!child->IsFull())
-                    allChildrenFull = false;
+                    return false;
             }
 
-            return allChildrenFull;
+            return true;
         }
 
         VERIFY_EXPR(false); // Shouldn't be here!

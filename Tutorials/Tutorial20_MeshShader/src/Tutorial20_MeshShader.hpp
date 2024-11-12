@@ -135,6 +135,11 @@ namespace Diligent
         bool        m_OcclusionCulling = true;
         int         m_CullMode       = 0;
     
+        float3 SceneCenter{138, 113.0f, 61};
+        std::vector<unsigned long long> visibleVoxels;
+        std::vector<unsigned long long> visibleOctreeNodes;
+
+
         OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;
     };
 

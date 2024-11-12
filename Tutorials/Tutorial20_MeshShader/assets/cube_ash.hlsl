@@ -111,6 +111,7 @@ bool IsVisible(OctreeLeafNode node, uint I)
     
     //                                                      Meshlet                                                         Octree Node
     float4 worldPosAndScale = GetRenderOption(0) ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
+    //float4 worldPosAndScale = VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale;
     
     // Calculate min Z value of the transformed bounding box
     float4 clipPosVertices   = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
@@ -127,28 +128,29 @@ bool IsVisible(OctreeLeafNode node, uint I)
     // Now I have four ndc positions which are the corner positions of my minZ-rect
     
     // Convert NDC coordinates to UV space [0,1]
-    float2 upperLeftBoundingUV  = float2(upperLeftBounding.x  * 0.5 + 0.5, upperLeftBounding.y  * -0.5 + 0.5);
+    float2 upperLeftBoundingUV = float2(upperLeftBounding.x * 0.5 + 0.5, upperLeftBounding.y * -0.5 + 0.5);
     float2 upperRightBoundingUV = float2(upperRightBounding.x * 0.5 + 0.5, upperRightBounding.y * -0.5 + 0.5);
-    float2 lowerLeftBoundingUV  = float2(lowerLeftBounding.x  * 0.5 + 0.5, lowerLeftBounding.y  * -0.5 + 0.5);
+    float2 lowerLeftBoundingUV = float2(lowerLeftBounding.x * 0.5 + 0.5, lowerLeftBounding.y * -0.5 + 0.5);
     float2 lowerRightBoundingUV = float2(lowerRightBounding.x * 0.5 + 0.5, lowerRightBounding.y * -0.5 + 0.5);
+    
     
     uint numLevels = 1; // At least one mip level is assumed
     uint outVar;
     HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
   
-    for (int mipLevel = max(numLevels - 3, 1); mipLevel >= 0; --mipLevel)
+    for (int mipLevel = 0/*max(numLevels - 4, 1)*/; mipLevel >= 0; --mipLevel)
     {
         uint2 texDims;
         HiZPyramid.GetDimensions(mipLevel, texDims.x, texDims.y, outVar);
         
-        float hiZDepthUL = HiZPyramid.Load(float3(uint2(upperLeftBoundingUV * texDims), mipLevel));
-        float hiZDepthUR = HiZPyramid.Load(float3(uint2(upperRightBoundingUV * texDims), mipLevel));
-        float hiZDepthLL = HiZPyramid.Load(float3(uint2(lowerLeftBoundingUV * texDims), mipLevel));
-        float hiZDepthLR = HiZPyramid.Load(float3(uint2(lowerRightBoundingUV * texDims), mipLevel));
+        float hiZDepthUL = HiZPyramid.Load(int3(uint2(upperLeftBoundingUV * texDims), mipLevel));
+        float hiZDepthUR = HiZPyramid.Load(int3(uint2(upperRightBoundingUV * texDims), mipLevel));
+        float hiZDepthLL = HiZPyramid.Load(int3(uint2(lowerLeftBoundingUV * texDims), mipLevel));
+        float hiZDepthLR = HiZPyramid.Load(int3(uint2(lowerRightBoundingUV * texDims), mipLevel));
         
         float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
         
-        if (maxHiZDepth < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
+        if (maxHiZDepth < minZ - g_Constants.DepthBias)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
             return false;            // Return: is not visible
     }
     
@@ -188,11 +190,10 @@ void main(in uint I  : SV_GroupIndex,
 
     // Access node indices for each thread    
     uint cullVoxel = 0;
-    cullVoxel += node.VoxelBufDataCount > 0 ? 0 : 1;
-    cullVoxel += I < node.VoxelBufDataCount ? 0 : 1;
-    cullVoxel += (GetRenderOption(2) || IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(node, I)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(3) == 0 || (node.VoxelBufDataCount >= GROUP_SIZE && node.BasePosAndScale.w <= 4)) ? 0 : 1;
+    cullVoxel += !(node.VoxelBufDataCount > 0);
+    cullVoxel += !(I < node.VoxelBufDataCount);
+    cullVoxel += (GetRenderOption(2) == true && IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(1) == true && IsVisible(node, I)) ? 0 : 1;
     
     if (cullVoxel == 0) // only draw valid voxels
     {

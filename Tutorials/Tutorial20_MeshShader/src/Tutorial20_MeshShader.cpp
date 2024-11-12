@@ -40,6 +40,8 @@
 #include "../../../../DiligentCore/Graphics/GraphicsEngineD3D12/include/d3dx12_win.h"
 
 #include "binvox/binvox_loader.h"
+#include <iostream>
+#include <fstream>
 
 extern std::vector<AABB> OTVoxelBoundBuffer;
 
@@ -768,7 +770,7 @@ namespace Diligent
         m_pImmediateContext->CommitShaderResources(m_pHiZComputeSRB, RESOURCE_STATE_TRANSITION_MODE_VERIFY);
 
         // Flush the context to ensure all commands are executed
-        m_pImmediateContext->Flush();
+        //m_pImmediateContext->Flush();
     }
     
     void Tutorial20_MeshShader::UpdateUI()
@@ -778,14 +780,15 @@ namespace Diligent
         {
             ImGui::Text("Culling Options");
 
+            ImGui::Checkbox("Show Best Occluders only", &m_ShowOnlyBestOccluders);
             ImGui::Checkbox("Enable Occlusion Culling", &m_OcclusionCulling);
             if (m_OcclusionCulling)
             {
                 static const char* items[] = {"Cull Octree Nodes", "Cull Meshlets"};
                 ImGui::Combo("Culling Mode", &m_CullMode, items, IM_ARRAYSIZE(items));
-                ImGui::Checkbox("Show Best Occluders only", &m_ShowOnlyBestOccluders);
                 ImGui::SliderFloat("Depth Bias", &m_OCThreshold, 0.0f, 0.1f, "%.5f", ImGuiSliderFlags_Logarithmic);
             }
+            
 
             ImGui::Checkbox("Enable Frustum Culling", &m_FrustumCulling);
 
@@ -810,6 +813,8 @@ namespace Diligent
                 fpc.SetRotation(0, 0);
             }
 
+            ImGui::DragFloat3("Orbit Center", &SceneCenter.x);
+
             ImGui::Spacing();
             ImGui::Text("Statistics");
 
@@ -831,20 +836,37 @@ namespace Diligent
         Attribs.EngineCI.Features.MeshShaders = DEVICE_FEATURE_STATE_ENABLED;
     }
     
+
+    const std::string model = "torus";
+    const std::string sceneRes = "256";
+
+    const std::string fileName = model + "_" + sceneRes;
+
     void Tutorial20_MeshShader::Initialize(const SampleInitInfo& InitInfo)
     {
         SampleBase::Initialize(InitInfo);
     
+        visibleVoxels.reserve(30000);
+        visibleOctreeNodes.reserve(30000);
+
         fpc.SetMoveSpeed(30.f);
-    
+        fpc.SetPos({80, 130, 20});
+        fpc.SetRotation(0, 0);
+        
         LoadTexture();
         //CreateDrawTasks();
-        CreateDrawTasksFromMesh("models/window_512.binvox");
+        CreateDrawTasksFromMesh("models/binvox/" + fileName + ".binvox");
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
         CreatePipelineState();
     }
-    
+
+    float angle = 0.0f;
+
+#ifndef TESTING_ANIM
+//#define TESTING_ANIM
+#endif
+
     void Tutorial20_MeshShader::Render()
     {
         auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
@@ -951,7 +973,42 @@ namespace Diligent
                     m_VisibleOTNodes = StagingData[AvailableFrameId % m_StatisticsHistorySize].visibleOctreeNodes;
                 }
             }
-    
+
+#ifdef TESTING_ANIM
+
+            if (angle < 2 * PI_F)
+            {
+                visibleVoxels.push_back(m_VisibleCubes);
+                visibleOctreeNodes.push_back(m_VisibleOTNodes);
+            }
+            else 
+            {
+                std::fstream vizVoxelFile;
+                vizVoxelFile.open("C:\\Users\\fredd\\Desktop\\" + fileName + "_voxels.csv", std::ios_base::out);
+
+                vizVoxelFile << "frame,visible_voxels\n"; 
+
+                for (int i = 0; i < visibleVoxels.size(); i++)
+                {
+                    vizVoxelFile << i << ',' << visibleVoxels[i] << ',' << "\n";
+                }
+                vizVoxelFile.close();
+
+                std::fstream vizOctreeFile;
+                vizOctreeFile.open("C:\\Users\\fredd\\Desktop\\" + fileName + "_nodes.csv", std::ios_base::out);
+
+                vizOctreeFile << "frame,visible_nodes\n";
+
+                for (int i = 0; i < visibleOctreeNodes.size(); i++)
+                    vizOctreeFile << i << ',' << visibleOctreeNodes[i] << ',' << "\n";
+                vizOctreeFile.close();
+                
+                visibleOctreeNodes.clear();
+                visibleVoxels.clear();
+            }
+
+#endif
+
             m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
             m_pImmediateContext->Flush();
             m_pImmediateContext->FinishFrame();
@@ -959,11 +1016,39 @@ namespace Diligent
             ++m_FrameId;
         }
     }
-    
+
     void Tutorial20_MeshShader::Update(double CurrTime, double ElapsedTime)
     {
         SampleBase::Update(CurrTime, ElapsedTime);
         UpdateUI();
+        
+#ifdef TESTING_ANIM
+
+        // Fixed center point (the model's center)
+        const float  Radius        = 400.0f;
+        const float  CameraHeight  = 100.0f;
+        const float  RotationSpeed = 0.05f;
+
+        // Calculate orbiting camera position - switched sin/cos for correct rotation direction
+        angle    = static_cast<float>(CurrTime) * RotationSpeed * 2.0f * PI_F;
+        float3 cameraPos = float3{
+            SceneCenter.x + Radius * std::sin(angle), // Switched to sin
+            SceneCenter.y + CameraHeight + (std::sin(angle) + 1) * 100,
+            SceneCenter.z + Radius * std::cos(angle) // Switched to cos
+        };
+
+        // Set camera position to orbit point
+        fpc.SetPos(cameraPos);
+
+        // Always look at center
+        float3 lookDir = normalize(SceneCenter - cameraPos);
+        float  pitch   = std::asin(lookDir.y);
+        float  yaw     = std::atan2(lookDir.x, lookDir.z); // Switched order to match coordinate system
+
+        // Set camera orientation to look at center
+        fpc.SetRotation(-yaw, pitch); // Negated yaw to correct rotation direction
+    
+#endif
 
         fpc.Update(GetInputController(), (float)ElapsedTime);
 
@@ -974,11 +1059,12 @@ namespace Diligent
         auto SrfPreTransform = GetSurfacePretransformMatrix(float3{0, 0, 1});
     
         // Get projection matrix adjusted to the current screen orientation
-        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 1.f, 500.f);
+        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 1.f, 600.f);
     
         // Compute view and view-projection matrices
         m_ViewMatrix = View * SrfPreTransform;
         m_ViewProjMatrix = m_ViewMatrix * Proj;
+
     }
 
 } // namespace Diligent
