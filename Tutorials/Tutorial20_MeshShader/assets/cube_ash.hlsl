@@ -110,8 +110,8 @@ bool IsVisible(OctreeLeafNode node, uint I)
         return false;
     
     //                                                      Meshlet                                                         Octree Node
-    float4 worldPosAndScale = GetRenderOption(0) ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
-    //float4 worldPosAndScale = VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale;
+    //float4 worldPosAndScale = GetRenderOption(0) ? VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale : node.BasePosAndScale;
+    float4 worldPosAndScale = VoxelPositionBuffer[node.VoxelBufStartIndex + I].BasePosAndScale;
     
     // Calculate min Z value of the transformed bounding box
     float4 clipPosVertices   = float4(0.f, 0.f, 0.f, 0.f); // also get min and max x- and y-values for screen-space box to check 
@@ -138,7 +138,7 @@ bool IsVisible(OctreeLeafNode node, uint I)
     uint outVar;
     HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
   
-    for (int mipLevel = 0/*max(numLevels - 4, 1)*/; mipLevel >= 0; --mipLevel)
+    for (int mipLevel = 0/*max(numLevels - 3, 1)*/; mipLevel >= 0; --mipLevel)
     {
         uint2 texDims;
         HiZPyramid.GetDimensions(mipLevel, texDims.x, texDims.y, outVar);
@@ -148,10 +148,13 @@ bool IsVisible(OctreeLeafNode node, uint I)
         float hiZDepthLL = HiZPyramid.Load(int3(uint2(lowerLeftBoundingUV * texDims), mipLevel));
         float hiZDepthLR = HiZPyramid.Load(int3(uint2(lowerRightBoundingUV * texDims), mipLevel));
         
-        float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
+        if (all(float4(hiZDepthUL, hiZDepthUR, hiZDepthLL, hiZDepthLR)))
+        {
+            float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
         
-        if (maxHiZDepth < minZ - g_Constants.DepthBias)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
-            return false;            // Return: is not visible
+            if (maxHiZDepth < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
+                return false;           // Return: is not visible
+        }
     }
     
     return true; // All mip levels have been traversed and the bounding box has not been found to be occluded
@@ -193,7 +196,7 @@ void main(in uint I  : SV_GroupIndex,
     cullVoxel += !(node.VoxelBufDataCount > 0);
     cullVoxel += !(I < node.VoxelBufDataCount);
     cullVoxel += (GetRenderOption(2) == true && IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(1) == true && IsVisible(node, I)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(1) == false || IsVisible(node, I)) ? 0 : 1;
     
     if (cullVoxel == 0) // only draw valid voxels
     {

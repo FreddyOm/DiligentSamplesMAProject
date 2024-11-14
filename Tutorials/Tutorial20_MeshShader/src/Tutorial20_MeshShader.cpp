@@ -837,7 +837,7 @@ namespace Diligent
     }
     
 
-    const std::string model = "torus";
+    const std::string model = "hairball";
     const std::string sceneRes = "256";
 
     const std::string fileName = model + "_" + sceneRes;
@@ -864,7 +864,7 @@ namespace Diligent
     float angle = 0.0f;
 
 #ifndef TESTING_ANIM
-//#define TESTING_ANIM
+#define TESTING_ANIM
 #endif
 
     void Tutorial20_MeshShader::Render()
@@ -1059,7 +1059,7 @@ namespace Diligent
         auto SrfPreTransform = GetSurfacePretransformMatrix(float3{0, 0, 1});
     
         // Get projection matrix adjusted to the current screen orientation
-        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 1.f, 600.f);
+        auto Proj = GetAdjustedProjectionMatrix(m_FOV, 10.f, 700.f);
     
         // Compute view and view-projection matrices
         m_ViewMatrix = View * SrfPreTransform;
