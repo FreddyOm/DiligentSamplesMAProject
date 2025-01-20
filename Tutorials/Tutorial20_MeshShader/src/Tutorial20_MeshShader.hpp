@@ -32,6 +32,7 @@
 #include "FirstPersonCamera.hpp"
 #include "octree/octree.h"
 #include <AdvancedMath.hpp>
+#include <Timer.hpp>
 
 namespace Diligent
 {
@@ -93,6 +94,11 @@ namespace Diligent
         RefCntAutoPtr<IBuffer> m_pBestOccluderBuffer;
         RefCntAutoPtr<IBuffer> m_pOctreeNodeBuffer;
         RefCntAutoPtr<IBuffer> m_pConstants;
+        RefCntAutoPtr<ITexture> m_pOverdrawTexture;
+
+        Box overdrawUpdateBox;
+        TextureSubResData subResData;
+        std::vector<Uint32> clearData;
 
         RefCntAutoPtr<ITexture>                  m_pHiZPyramidTexture;
         std::vector<RefCntAutoPtr<ITextureView>> m_HiZMipUAVs;
@@ -135,9 +141,15 @@ namespace Diligent
         bool        m_OcclusionCulling = true;
         int         m_CullMode       = 0;
     
-        float3 SceneCenter{100, 0, 150};
+        float3 SceneCenter{60, 115, 20};
         std::vector<unsigned long long> visibleVoxels;
         std::vector<unsigned long long> visibleOctreeNodes;
+
+        Timer               updateTimer;
+        Timer               renderTimer;
+        std::vector<double> frameUpdateTimes;
+        std::vector<double> frameRenderTimes;
+        std::vector<double> completeFrameTimes; 
 
 
         OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;

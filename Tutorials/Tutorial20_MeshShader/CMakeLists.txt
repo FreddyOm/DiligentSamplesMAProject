@@ -30,12 +30,10 @@ set(SHADERS
 
 set(ASSETS
     assets/DGLogo.png
-    assets/models/suzanne.fbx
-    assets/models/sponza.fbx
-    assets/models/suzanne.binvox
-    assets/models/window_256.binvox
-    assets/models/window_512.binvox
-    assets/models/torus.binvox
+    assets/models/binvox/window_256.binvox
+    assets/models/binvox/hairball_256.binvox
+    assets/models/binvox/lucy_256.binvox
+    assets/models/binvox/torus_256.binvox
 )
 
 add_sample_app("Tutorial20_MeshShader" "DiligentSamples/Tutorials" "${SOURCE}" "${INCLUDE}" "${SHADERS}" "${ASSETS}")

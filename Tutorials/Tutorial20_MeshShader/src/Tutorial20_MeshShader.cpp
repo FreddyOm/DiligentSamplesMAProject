@@ -45,6 +45,9 @@
 
 extern std::vector<AABB> OTVoxelBoundBuffer;
 
+
+
+
 namespace Diligent
 {
     namespace
@@ -174,6 +177,12 @@ namespace Diligent
         delete m_pOcclusionOctreeRoot;
     }
     
+    const std::string model    = "torus";
+    const std::string sceneRes = "256";
+
+    const std::string fileName = model + "_" + sceneRes;
+
+
     void Tutorial20_MeshShader::CreateDrawTasksFromMesh(std::string meshPath)
     {    
         PopulateOctree(meshPath);
@@ -199,9 +208,17 @@ namespace Diligent
             m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
             VERIFY_EXPR(orderedVoxelDataBuffer.size() > 0 && OTLeafNodes.size() > 0);
 
+            updateTimer.Restart();
             // Visit all nodes and search for "full" nodes
             m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
             VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Couldn't find any best occluders
+            double queryTime = updateTimer.GetElapsedTime();
+
+            std::fstream queryBOFile;
+            queryBOFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_queryBO.csv", std::ios_base::out);
+
+            queryBOFile << queryTime;
+            queryBOFile.close();
         }
         
         // Temporary buffer for octree insertion - can now be cleared (but was formerly used in QueryAllNodes()!)
@@ -423,6 +440,36 @@ namespace Diligent
             VERIFY_EXPR(pPS != nullptr);
         }
 
+        {
+            const auto& depthBufTex = m_pSwapChain->GetDepthBufferDSV()->GetTexture();
+
+            TextureDesc OverdrawTexDesc;
+            OverdrawTexDesc.Type      = RESOURCE_DIM_TEX_2D;
+            OverdrawTexDesc.Width     = depthBufTex->GetDesc().Width;
+            OverdrawTexDesc.Height    = depthBufTex->GetDesc().Height;
+            OverdrawTexDesc.Format    = TEX_FORMAT_R32_UINT;
+            OverdrawTexDesc.BindFlags = BIND_UNORDERED_ACCESS;
+            OverdrawTexDesc.Usage     = USAGE_DEFAULT;
+            OverdrawTexDesc.MipLevels = 1;
+
+            m_pDevice->CreateTexture(OverdrawTexDesc, nullptr, &m_pOverdrawTexture);
+            VERIFY_EXPR(m_pOverdrawTexture != nullptr);
+
+            clearData = std::vector<Uint32>(depthBufTex->GetDesc().Width * depthBufTex->GetDesc().Height, 0);
+            
+            overdrawUpdateBox.MinX = 0;
+            overdrawUpdateBox.MinY = 0;
+            overdrawUpdateBox.MinZ = 0;
+            overdrawUpdateBox.MaxX = depthBufTex->GetDesc().Width;
+            overdrawUpdateBox.MaxY = depthBufTex->GetDesc().Height;
+            overdrawUpdateBox.MaxZ = 1;
+
+            subResData.pData       = clearData.data();
+            subResData.Stride      = depthBufTex->GetDesc().Width * sizeof(Uint32); 
+            subResData.DepthStride = 0;                              
+        }
+
+
         // Create HiZ resources
         CreateHiZTextures();
 
@@ -481,6 +528,9 @@ namespace Diligent
         if (m_pSRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants"))
             m_pSRB->GetVariableByName(SHADER_TYPE_MESH, "cbConstants")->Set(m_pConstants);
     
+        if (m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_OverdrawUAV"))
+            m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_OverdrawUAV")->Set(m_pOverdrawTexture->GetDefaultView(TEXTURE_VIEW_UNORDERED_ACCESS));
+
         if (m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture"))
             m_pSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture")->Set(m_CubeTextureSRV);
 
@@ -810,7 +860,7 @@ namespace Diligent
             if (ImGui::Button("Reset Camera"))
             {
                 fpc.SetPos({80, 130, -310});
-                fpc.SetRotation(0, 0);
+                fpc.SetRotation(0, .0f);
             }
 
             ImGui::DragFloat3("Orbit Center", &SceneCenter.x);
@@ -835,12 +885,6 @@ namespace Diligent
     
         Attribs.EngineCI.Features.MeshShaders = DEVICE_FEATURE_STATE_ENABLED;
     }
-    
-
-    const std::string model = "hairball";
-    const std::string sceneRes = "256";
-
-    const std::string fileName = model + "_" + sceneRes;
 
     void Tutorial20_MeshShader::Initialize(const SampleInitInfo& InitInfo)
     {
@@ -848,6 +892,9 @@ namespace Diligent
     
         visibleVoxels.reserve(30000);
         visibleOctreeNodes.reserve(30000);
+        frameRenderTimes.reserve(30000);
+        frameUpdateTimes.reserve(30000);
+        completeFrameTimes.reserve(30000);
 
         fpc.SetMoveSpeed(30.f);
         fpc.SetPos({80, 130, 20});
@@ -864,16 +911,17 @@ namespace Diligent
     float angle = 0.0f;
 
 #ifndef TESTING_ANIM
-#define TESTING_ANIM
+//#define TESTING_ANIM
 #endif
 
     void Tutorial20_MeshShader::Render()
     {
+        renderTimer.Restart();
         auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
         // Clear the back buffer and depth buffer
         //const float ClearColor[] = {0.350f, 0.350f, 0.350f, 1.0f};
-        const float ClearColor[] = {0.05f, 0.05f, 0.05f, 1.0f};
+        const float ClearColor[] = {0.0f, 0.0f, 0.0f, 1.0f};
         
         m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -930,8 +978,12 @@ namespace Diligent
 
         m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "HiZPyramid")->Set(m_pHiZPyramidTexture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
         
+        
+        m_pImmediateContext->UpdateTexture(m_pOverdrawTexture, 0, 0, overdrawUpdateBox, subResData, 
+            RESOURCE_STATE_TRANSITION_MODE_TRANSITION, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
 
         // Amplification shader executes 32 threads per group and the task count must be aligned to 32
         // to prevent loss of tasks or access outside of the data array.
@@ -975,6 +1027,7 @@ namespace Diligent
             }
 
 #ifdef TESTING_ANIM
+#ifdef TESTING_CAPTURE
 
             if (angle < 2 * PI_F)
             {
@@ -984,7 +1037,7 @@ namespace Diligent
             else 
             {
                 std::fstream vizVoxelFile;
-                vizVoxelFile.open("C:\\Users\\fredd\\Desktop\\" + fileName + "_voxels.csv", std::ios_base::out);
+                vizVoxelFile.open(".\\profiling\\" + fileName + "_voxels.csv", std::ios_base::out);
 
                 vizVoxelFile << "frame,visible_voxels\n"; 
 
@@ -995,7 +1048,7 @@ namespace Diligent
                 vizVoxelFile.close();
 
                 std::fstream vizOctreeFile;
-                vizOctreeFile.open("C:\\Users\\fredd\\Desktop\\" + fileName + "_nodes.csv", std::ios_base::out);
+                vizOctreeFile.open(".\\profiling\\" + fileName + "_nodes.csv", std::ios_base::out);
 
                 vizOctreeFile << "frame,visible_nodes\n";
 
@@ -1006,7 +1059,7 @@ namespace Diligent
                 visibleOctreeNodes.clear();
                 visibleVoxels.clear();
             }
-
+#endif
 #endif
 
             m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
@@ -1015,10 +1068,15 @@ namespace Diligent
             
             ++m_FrameId;
         }
+
+        frameRenderTimes.push_back(renderTimer.GetElapsedTime());
     }
 
     void Tutorial20_MeshShader::Update(double CurrTime, double ElapsedTime)
     {
+        completeFrameTimes.push_back(updateTimer.GetElapsedTime());
+        updateTimer.Restart();
+        
         SampleBase::Update(CurrTime, ElapsedTime);
         UpdateUI();
         
@@ -1029,6 +1087,44 @@ namespace Diligent
         const float  CameraHeight  = 100.0f;
         const float  RotationSpeed = 0.05f;
 
+        if (angle >= 2.0f * PI_F)
+        {
+
+           /* std::fstream frameUpdateFile;
+            frameUpdateFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_updateTime.csv", std::ios_base::out);
+
+            frameUpdateFile << "frame,time\n";
+
+            for (int i = 0; i < frameUpdateTimes.size(); i++)
+                frameUpdateFile << i << ',' << frameUpdateTimes[i] << ',' << "\n";
+            frameUpdateFile.close();
+
+
+            std::fstream frameRenderFile;
+            frameRenderFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_renderTime.csv", std::ios_base::out);
+
+            frameRenderFile << "frame,time\n";
+
+            for (int i = 0; i < frameRenderTimes.size(); i++)
+                frameRenderFile << i << ',' << frameRenderTimes[i] << ',' << "\n";
+            frameRenderFile.close();
+
+            std::fstream completeFrameTimeFile;
+            completeFrameTimeFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_frameTime.csv", std::ios_base::out);
+
+            completeFrameTimeFile << "frame,time\n";
+
+            for (int i = 0; i < completeFrameTimes.size(); i++)
+                completeFrameTimeFile << i << ',' << completeFrameTimes[i] << ',' << "\n";
+            completeFrameTimeFile.close();
+
+            frameUpdateTimes.clear();
+            frameRenderTimes.clear();
+            completeFrameTimes.clear();
+
+            SampleBase::~SampleBase();*/
+        }
+            
         // Calculate orbiting camera position - switched sin/cos for correct rotation direction
         angle    = static_cast<float>(CurrTime) * RotationSpeed * 2.0f * PI_F;
         float3 cameraPos = float3{
@@ -1065,6 +1161,8 @@ namespace Diligent
         m_ViewMatrix = View * SrfPreTransform;
         m_ViewProjMatrix = m_ViewMatrix * Proj;
 
+
+        frameUpdateTimes.push_back(updateTimer.GetElapsedTime());
     }
 
 } // namespace Diligent
