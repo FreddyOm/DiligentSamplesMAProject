@@ -135,30 +135,39 @@ bool IsVisible(OctreeLeafNode node, uint I)
     
     
     uint numLevels = 1; // At least one mip level is assumed
+    uint width = 0;
+    uint height = 0;
+    
     uint outVar;
-    HiZPyramid.GetDimensions(outVar, outVar, outVar, numLevels);
+    HiZPyramid.GetDimensions(0, width, height, numLevels);
   
-    // @TODO: Calculate mip-level to best approximate bounding box. Only sample this mip-level
-    for (int mipLevel = 4/*max(numLevels - 3, 1)*/; mipLevel >= 4; --mipLevel)  
+    float2 boxSizeUV = float2(
+        max(upperRightBoundingUV.x, lowerRightBoundingUV.x) - min(upperLeftBoundingUV.x, lowerLeftBoundingUV.x),
+        max(upperLeftBoundingUV.y, upperRightBoundingUV.y) - min(lowerLeftBoundingUV.y, lowerRightBoundingUV.y)) * 
+        float2(width, height);
+    
+    float boxPixelArea = boxSizeUV.x * boxSizeUV.y;
+    float idealMipLevel = log2(sqrt(boxPixelArea));
+    
+    uint targetMipLevel = uint(min(max(round(idealMipLevel), 0), numLevels - 1));
+    
+    uint2 texDims;
+    HiZPyramid.GetDimensions(targetMipLevel, texDims.x, texDims.y, outVar);
+    
+    float hiZDepthUL = HiZPyramid.Load(int3(uint2(upperLeftBoundingUV * texDims), targetMipLevel));
+    float hiZDepthUR = HiZPyramid.Load(int3(uint2(upperRightBoundingUV * texDims), targetMipLevel));
+    float hiZDepthLL = HiZPyramid.Load(int3(uint2(lowerLeftBoundingUV * texDims), targetMipLevel));
+    float hiZDepthLR = HiZPyramid.Load(int3(uint2(lowerRightBoundingUV * texDims), targetMipLevel));
+    
+    if (all(float4(hiZDepthUL, hiZDepthUR, hiZDepthLL, hiZDepthLR)))    // @TODO: Check if this can be optimized
     {
-        uint2 texDims;
-        HiZPyramid.GetDimensions(mipLevel, texDims.x, texDims.y, outVar);
-        
-        float hiZDepthUL = HiZPyramid.Load(int3(uint2(upperLeftBoundingUV * texDims), mipLevel));
-        float hiZDepthUR = HiZPyramid.Load(int3(uint2(upperRightBoundingUV * texDims), mipLevel));
-        float hiZDepthLL = HiZPyramid.Load(int3(uint2(lowerLeftBoundingUV * texDims), mipLevel));
-        float hiZDepthLR = HiZPyramid.Load(int3(uint2(lowerRightBoundingUV * texDims), mipLevel));
-        
-        if (all(float4(hiZDepthUL, hiZDepthUR, hiZDepthLL, hiZDepthLR)))    // @TODO: Check if this can be optimized
-        {
-            float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
-        
-            //if (maxHiZDepth < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
-            // Use this instead! Additionally to the the min/max test, get the difference to exclude edge cases caused by floating point inaccuracies.
-            // Only if the difference between min/max is more than a given threshold should it be considered occluded!
-            if (maxHiZDepth < minZ && abs(maxHiZDepth - minZ) > 0.0000001f)    
-                return false;           // Return: is not visible
-        }
+        float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
+    
+        //if (maxHiZDepth < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
+        // Use this instead! Additionally to the the min/max test, get the difference to exclude edge cases caused by floating point inaccuracies.
+        // Only if the difference between min/max is more than a given threshold should it be considered occluded!
+        if (maxHiZDepth < minZ && abs(maxHiZDepth - minZ) > 0.0000001f)
+            return false;           // Return: is not visible
     }
     
     return true; // All mip levels have been traversed and the bounding box has not been found to be occluded
