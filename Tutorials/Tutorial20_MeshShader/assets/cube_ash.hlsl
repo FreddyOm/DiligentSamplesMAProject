@@ -159,16 +159,13 @@ bool IsVisible(OctreeLeafNode node, uint I)
     float hiZDepthLL = HiZPyramid.Load(int3(uint2(lowerLeftBoundingUV * texDims), targetMipLevel));
     float hiZDepthLR = HiZPyramid.Load(int3(uint2(lowerRightBoundingUV * texDims), targetMipLevel));
     
-    if (all(float4(hiZDepthUL, hiZDepthUR, hiZDepthLL, hiZDepthLR)))    // @TODO: Check if this can be optimized
-    {
-        float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
+    float maxHiZDepth = max(max(hiZDepthLL, hiZDepthLR), max(hiZDepthUL, hiZDepthUR));
     
         //if (maxHiZDepth < minZ)     // No bounding box z value was lower (closer) than z-pyramids z value -> fully occluded
         // Use this instead! Additionally to the the min/max test, get the difference to exclude edge cases caused by floating point inaccuracies.
         // Only if the difference between min/max is more than a given threshold should it be considered occluded!
-        if (maxHiZDepth < minZ && abs(maxHiZDepth - minZ) > 0.0000001f)
-            return false;           // Return: is not visible
-    }
+    if (maxHiZDepth < minZ && abs(maxHiZDepth - minZ) > 0.0000001f)
+        return false; // Return: is not visible
     
     return true; // All mip levels have been traversed and the bounding box has not been found to be occluded
 }
