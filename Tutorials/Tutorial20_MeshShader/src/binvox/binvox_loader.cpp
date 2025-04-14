@@ -28,7 +28,6 @@ size_t get_index(int x, int y, int z, BinvoxData data)
 {
     size_t index = x * (data.width * data.height) + z * data.width + y; // wxh = width * height = d * d
     return index;
-
 }
 
 BinvoxData read_binvox(string filespec)

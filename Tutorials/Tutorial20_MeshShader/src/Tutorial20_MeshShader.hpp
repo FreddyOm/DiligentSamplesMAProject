@@ -50,6 +50,8 @@ namespace Diligent
         ~Tutorial20_MeshShader();
     
     private:
+        void InitializeOctreeFromMesh(std::string meshPath);
+        void InsertNextVoxel();
         void CreateDrawTasksFromMesh(std::string meshPath);
         void PopulateOctree(std::string OTmodelPath);
         void CreateDrawTasks();

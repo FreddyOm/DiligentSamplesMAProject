@@ -177,48 +177,153 @@ namespace Diligent
         delete m_pOcclusionOctreeRoot;
     }
     
-    const std::string model    = "torus";
+    const std::string model    = "lucy";
     const std::string sceneRes = "256";
 
     const std::string fileName = model + "_" + sceneRes;
+    BinvoxData        modelData{};
+    AABB              worldBounds{};
 
+    std::vector<VoxelOC::VoxelBufData> orderedVoxelDataBuffer{};
+    std::vector<VoxelOC::OctreeLeafNode> OTLeafNodes{};
+    std::vector<VoxelOC::DepthPrepassDrawTask> depthPrepassOTNodes;
+    size_t                                     voxelIndex = 0;
+    
+    void Tutorial20_MeshShader::InitializeOctreeFromMesh(std::string meshPath)
+    {
+        modelData = read_binvox(meshPath);
+
+        worldBounds            = {{0, 0, 0}, {(float)modelData.width, (float)modelData.height, (float)modelData.depth}};
+        m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds, ASGroupSize);
+        
+        orderedVoxelDataBuffer.resize(modelData.size);
+        OTLeafNodes.resize(orderedVoxelDataBuffer.size());
+        depthPrepassOTNodes.resize(orderedVoxelDataBuffer.size());
+    }
+
+    void Tutorial20_MeshShader::InsertNextVoxel()
+    {
+        /*if (voxelIndex > modelData.height) 
+            return;*/
+
+        if (voxelIndex > 0)
+            return;
+
+        // @TODO: To optimize, just loop over get_index() indices and increment until next valid index found.
+        //        This will not result in a spatial-agnostic build-up, but will "randomly" spawn the voxels that 
+        //        make up the scene. This will most definetly result in better performance though!
+        // Edit: Not currently possible since xyz coords are necessary for construction of voxel bounds!
+
+        // Extract next voxel index
+        for (size_t z = 0; z < modelData.depth ; ++z)
+        {
+            //for (size_t y = voxelIndex; y < voxelIndex + 1 && y < modelData.height; ++y)
+            for (size_t y = 0; y < modelData.height; ++y)
+            {
+                for (size_t x = 0; x < modelData.width; ++x)
+                {
+                    size_t index = get_index((int) x, (int) y, (int) z, modelData);
+                    if (modelData.voxels[index] > 0)
+                    {
+                        AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
+                        OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+                        m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
+                    }
+                }
+            }
+        }
+        
+        orderedVoxelDataBuffer.clear();
+        depthPrepassOTNodes.clear();
+        OTLeafNodes.clear();
+        
+        m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
+        m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
+
+        // -------------------------- DEBUG --------------------------
+       
+        #if DILIGENT_DEBUG
+
+        for (auto& voxPos : orderedVoxelDataBuffer)
+        {
+            VERIFY_EXPR(voxPos.BasePosAndScale.w == 1);
+            VERIFY_EXPR(voxPos.BasePosAndScale.x >= 0 && voxPos.BasePosAndScale.x <= modelData.width);
+            VERIFY_EXPR(voxPos.BasePosAndScale.y >= 0 && voxPos.BasePosAndScale.y <= modelData.height);
+            VERIFY_EXPR(voxPos.BasePosAndScale.z >= 0 && voxPos.BasePosAndScale.z <= modelData.depth);
+        }
+
+#endif
+
+        for (auto& task : OTLeafNodes)
+        {
+            VERIFY_EXPR(task.BasePosAndScale.w >= 4);
+        }
+
+        for (auto& task : depthPrepassOTNodes)
+        {
+            task.BestOccluderCount = static_cast<int>(depthPrepassOTNodes.size());  // This is necessary!
+#ifdef DILIGENT_DEBUG
+            VERIFY_EXPR(task.BasePositionAndScale.w >= 4);
+#endif
+        }
+
+        // -----------------------------------------------------------
+
+        // Set new draw task count
+        m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size()) + ASGroupSize - (static_cast<Uint32>(OTLeafNodes.size()) % ASGroupSize);
+        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
+
+        // Set new depth pass draw task count
+        m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size()) + ASGroupSize - (static_cast<Uint32>(depthPrepassOTNodes.size()) % ASGroupSize);
+        VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
+
+        // Map buffers to GPU
+        m_pImmediateContext->UpdateBuffer(m_pVoxelPosBuffer, 0, orderedVoxelDataBuffer.size(), orderedVoxelDataBuffer.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->UpdateBuffer(m_pOctreeNodeBuffer, 0, OTLeafNodes.size(), OTLeafNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->UpdateBuffer(m_pBestOccluderBuffer, 0, depthPrepassOTNodes.size(), depthPrepassOTNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+        ++voxelIndex;
+    }
 
     void Tutorial20_MeshShader::CreateDrawTasksFromMesh(std::string meshPath)
     {    
-        PopulateOctree(meshPath);
+        //PopulateOctree(meshPath);
+        InitializeOctreeFromMesh(meshPath);
 
         VERIFY_EXPR(m_pOcclusionOctreeRoot != nullptr);
         VERIFY_EXPR(m_pOcclusionOctreeRoot->gridSize > 0);
-        VERIFY_EXPR(m_pOcclusionOctreeRoot->nodeBuffer.size() > 0);
+        //VERIFY_EXPR(m_pOcclusionOctreeRoot->nodeBuffer.size() > 0);
         
         // Buffer where objects in one node are stored contigously (start index + length)
-        std::vector<VoxelOC::VoxelBufData>  orderedVoxelDataBuffer{};
-        orderedVoxelDataBuffer.reserve(OTVoxelBoundBuffer.size());
+        orderedVoxelDataBuffer.clear();
+        orderedVoxelDataBuffer.reserve(static_cast<int>(modelData.depth * modelData.height * modelData.width));
         
         // Buffer for all octree nodes which include at least one voxel
-        std::vector<VoxelOC::OctreeLeafNode> OTLeafNodes{};
-        OTLeafNodes.reserve(static_cast<int>(OTVoxelBoundBuffer.size() / 2.0f));
+        OTLeafNodes.clear();
+        OTLeafNodes.reserve(static_cast<int>(modelData.depth * modelData.height * modelData.width / 2.0f));
 
         // Buffer for full octree nodes which represent best occluders
-        std::vector<VoxelOC::DepthPrepassDrawTask> depthPrepassOTNodes;
-        depthPrepassOTNodes.reserve(OTLeafNodes.size());
+        depthPrepassOTNodes.clear();
+        depthPrepassOTNodes.reserve(static_cast<int>(modelData.depth * modelData.height * modelData.width / 2.0f));
         
+
+        // Now this can be done multiple times!
         {
             // Visist all nodes and fill the given buffers with data
             m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
-            VERIFY_EXPR(orderedVoxelDataBuffer.size() > 0 && OTLeafNodes.size() > 0);
+            //VERIFY_EXPR(orderedVoxelDataBuffer.size() > 0 && OTLeafNodes.size() > 0);
 
-            updateTimer.Restart();
+            //updateTimer.Restart();
             // Visit all nodes and search for "full" nodes
             m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
-            VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Couldn't find any best occluders
-            double queryTime = updateTimer.GetElapsedTime();
+            //VERIFY_EXPR(depthPrepassOTNodes.size() > 0);        // Couldn't find any best occluders
+            //double queryTime = updateTimer.GetElapsedTime();
 
-            std::fstream queryBOFile;
+            /*std::fstream queryBOFile;
             queryBOFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_queryBO.csv", std::ios_base::out);
 
             queryBOFile << queryTime;
-            queryBOFile.close();
+            queryBOFile.close();*/
         }
         
         // Temporary buffer for octree insertion - can now be cleared (but was formerly used in QueryAllNodes()!)
@@ -226,7 +331,7 @@ namespace Diligent
         // Assign some more (debug) data to the draw tasks (= octree leaf nodes)
         FastRandReal<float> Rnd{0, 0.f, 1.f};
 
-#if DILIGENT_DEBUG
+#if DILIGENT_DEBUG && 0
         
         for (auto& voxPos : orderedVoxelDataBuffer)
         {
@@ -248,7 +353,7 @@ namespace Diligent
             task.BestOccluderCount = static_cast<int>(depthPrepassOTNodes.size());
             VERIFY_EXPR(task.BasePositionAndScale.w >= 4);
         }
-
+        
         // Bind buffer resources to GPU
         BindSortedIndexBuffer(orderedVoxelDataBuffer);
         BindOctreeNodeBuffer(OTLeafNodes);
@@ -264,19 +369,19 @@ namespace Diligent
 
     void Tutorial20_MeshShader::PopulateOctree(std::string OTmodelPath)
     {
-        BinvoxData data = read_binvox(OTmodelPath);
+        modelData = read_binvox(OTmodelPath);
 
-        AABB worldBounds       = {{0, 0, 0}, {(float)data.width, (float)data.height, (float)data.depth}};
+        worldBounds       = {{0, 0, 0}, {(float)modelData.width, (float)modelData.height, (float)modelData.depth}};
         m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds, ASGroupSize);
 
-        for (int z = 0; z < data.depth; ++z)
+        for (int z = 0; z < modelData.depth; ++z)
         {
-            for (int y = 0; y < data.height; ++y)
+            for (int y = 0; y < modelData.height; ++y)
             {
-                for (int x = 0; x < data.width; ++x)
+                for (int x = 0; x < modelData.width; ++x)
                 {
-                    size_t index = get_index(x, y, z, data);
-                    if (data.voxels[index] > 0)
+                    size_t index = get_index(x, y, z, modelData);
+                    if (modelData.voxels[index] > 0)
                     {
                         AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
                         OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
@@ -287,26 +392,34 @@ namespace Diligent
         }
     }
 
-    void Tutorial20_MeshShader::BindSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& orderedVoxelDataBuffer)
+    void Tutorial20_MeshShader::BindSortedIndexBuffer(std::vector<VoxelOC::VoxelBufData>& _orderedVoxelDataBuffer)
     {
+        if (_orderedVoxelDataBuffer.size() == 0) 
+            return;
+
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Ordered voxel data buffer";
         BuffDesc.Usage             = USAGE_DEFAULT;
         BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
-        BuffDesc.ElementByteStride = sizeof(orderedVoxelDataBuffer[0]);
-        BuffDesc.Size              = sizeof(orderedVoxelDataBuffer[0]) * static_cast<Uint32>(orderedVoxelDataBuffer.size());
+        //BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
+        BuffDesc.ElementByteStride = sizeof(_orderedVoxelDataBuffer[0]);
+        BuffDesc.Size              = sizeof(_orderedVoxelDataBuffer[0]) * static_cast<Uint32>(_orderedVoxelDataBuffer.size());
 
         BufferData BufData;
-        BufData.pData    = orderedVoxelDataBuffer.data();
+        BufData.pData    = NULL;
         BufData.DataSize = BuffDesc.Size;
 
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pVoxelPosBuffer);
         VERIFY_EXPR(m_pVoxelPosBuffer != nullptr);
+
+        _orderedVoxelDataBuffer.clear();
     }
 
     void Tutorial20_MeshShader::BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
     {
+        if (octreeNodeBuffer.size() <= 0)
+            return;
         // Realign octree node buffer
         octreeNodeBuffer.resize(octreeNodeBuffer.size() + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
         VERIFY_EXPR(octreeNodeBuffer.size() % ASGroupSize == 0);
@@ -316,39 +429,44 @@ namespace Diligent
         BuffDesc.Usage             = USAGE_DEFAULT;
         BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
+        //BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
         BuffDesc.ElementByteStride = sizeof(octreeNodeBuffer[0]);
         BuffDesc.Size              = sizeof(octreeNodeBuffer[0]) * static_cast<Uint32>(octreeNodeBuffer.size());
 
         BufferData BufData;
-        BufData.pData    = octreeNodeBuffer.data();
+        BufData.pData    = NULL;
         BufData.DataSize = BuffDesc.Size;
 
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pOctreeNodeBuffer);
         VERIFY_EXPR(m_pOctreeNodeBuffer != nullptr);
+
+        octreeNodeBuffer.clear();
     }
     
-    void Tutorial20_MeshShader::BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes)
+    void Tutorial20_MeshShader::BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& _depthPrepassOTNodes)
     {
-        if (depthPrepassOTNodes.size() == 0) return;
+        if (_depthPrepassOTNodes.size() <= 0) return;
 
         // Realign deoth prepass octree node buffer
-        depthPrepassOTNodes.resize(depthPrepassOTNodes.size() + ASGroupSize - (depthPrepassOTNodes.size() % ASGroupSize));
-        VERIFY_EXPR(depthPrepassOTNodes.size() % ASGroupSize == 0);
+        _depthPrepassOTNodes.resize(_depthPrepassOTNodes.size() + ASGroupSize - (_depthPrepassOTNodes.size() % ASGroupSize));
+        VERIFY_EXPR(_depthPrepassOTNodes.size() % ASGroupSize == 0);
 
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Best occluder nodes buffer";
         BuffDesc.Usage             = USAGE_DEFAULT;
         BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
-        BuffDesc.ElementByteStride = sizeof(depthPrepassOTNodes[0]);
-        BuffDesc.Size              = sizeof(depthPrepassOTNodes[0]) * static_cast<Uint32>(depthPrepassOTNodes.size());
+        BuffDesc.ElementByteStride = sizeof(_depthPrepassOTNodes[0]);
+        BuffDesc.Size              = sizeof(_depthPrepassOTNodes[0]) * static_cast<Uint32>(_depthPrepassOTNodes.size());
 
         BufferData BufData;
-        BufData.pData    = depthPrepassOTNodes.data();
+        BufData.pData    = NULL;
         BufData.DataSize = BuffDesc.Size;
 
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pBestOccluderBuffer);
         VERIFY_EXPR(m_pBestOccluderBuffer != nullptr);
+
+        _depthPrepassOTNodes.clear();
     }
 
     void Tutorial20_MeshShader::CreatePipelineState()
@@ -513,7 +631,7 @@ namespace Diligent
         if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "Statistics"))
             m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "Statistics")->Set(m_pStatisticsBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
         
-        if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer")) 
+        if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer"))
             m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "VoxelPositionBuffer")->Set(m_pVoxelPosBuffer->GetDefaultView(BUFFER_VIEW_SHADER_RESOURCE));
         
         if (m_pSRB->GetVariableByName(SHADER_TYPE_AMPLIFICATION, "OctreeNodes"))
@@ -902,7 +1020,21 @@ namespace Diligent
         
         LoadTexture();
         //CreateDrawTasks();
-        CreateDrawTasksFromMesh("models/binvox/" + fileName + ".binvox");
+        InitializeOctreeFromMesh("models/binvox/" + fileName + ".binvox");
+        //CreateDrawTasksFromMesh("models/binvox/" + fileName + ".binvox");
+
+        // Bind buffers and set initial draw task counts.
+        BindSortedIndexBuffer(orderedVoxelDataBuffer);
+        BindOctreeNodeBuffer(OTLeafNodes);
+        BindBestOccluderBuffer(depthPrepassOTNodes);
+
+        // Set draw task count
+        m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size());
+        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
+
+        m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size());
+        VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
+
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
         CreatePipelineState();
@@ -965,12 +1097,17 @@ namespace Diligent
                 CBConstants->Frustum[i] = plane;
             }
 
-            // Draw best occluders to depth buffer
-            DepthPrepass();
+            // Depth pre-pass only when full nodes are available
+            if (depthPrepassOTNodes.size() > 0)
+            {
+                // Draw best occluders to depth buffer
+                DepthPrepass();
 
-            // Clear Depth Stencil to avoid flickering (Remove later, should be able to just )
-            m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-            m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                // Clear Depth Stencil to avoid flickering (Remove later, should be able to just )
+                m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+                m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            }
+
         }        
 
         // Reset pipeline state to normally draw to back buffer
@@ -983,7 +1120,7 @@ namespace Diligent
             RESOURCE_STATE_TRANSITION_MODE_TRANSITION, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->CommitShaderResources(m_pSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
+        
 
         // Amplification shader executes 32 threads per group and the task count must be aligned to 32
         // to prevent loss of tasks or access outside of the data array.
@@ -1079,6 +1216,8 @@ namespace Diligent
         
         SampleBase::Update(CurrTime, ElapsedTime);
         UpdateUI();
+
+        InsertNextVoxel();
         
 #ifdef TESTING_ANIM
 

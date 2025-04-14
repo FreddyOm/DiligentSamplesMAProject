@@ -101,6 +101,23 @@ public:
         }
     }
 
+    //void QueryBestOccluders(std::vector<VoxelOC::DepthPrepassDrawTask>& depthPrepassOTNodes)
+    //{
+    //    // Fill depth prepass best occluders (Top Down)
+    //    for (int i = 0; i < children.size() && children[i] != nullptr; ++i)
+    //    {
+    //        if (children[i]->IsFull())
+    //        {
+    //            VoxelOC::DepthPrepassDrawTask drawTask{};
+    //            drawTask.BasePositionAndScale = children[i]->bounds.CenterAndScale();
+    //            depthPrepassOTNodes.push_back(std::move(drawTask));
+    //            continue;
+    //        }
+
+    //        children[i]->QueryBestOccluders(depthPrepassOTNodes);
+    //    }
+    //}
+
     void SplitNode()
     {
         if (!isLeaf) return;
