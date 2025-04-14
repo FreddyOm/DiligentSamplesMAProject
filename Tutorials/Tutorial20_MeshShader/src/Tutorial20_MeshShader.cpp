@@ -203,11 +203,11 @@ namespace Diligent
 
     void Tutorial20_MeshShader::InsertNextVoxel()
     {
-        /*if (voxelIndex > modelData.height) 
-            return;*/
-
-        if (voxelIndex > 0)
+        if (voxelIndex > modelData.height) 
             return;
+
+        /*if (voxelIndex > 0)
+            return;*/
 
         // @TODO: To optimize, just loop over get_index() indices and increment until next valid index found.
         //        This will not result in a spatial-agnostic build-up, but will "randomly" spawn the voxels that 
@@ -217,8 +217,8 @@ namespace Diligent
         // Extract next voxel index
         for (size_t z = 0; z < modelData.depth ; ++z)
         {
-            //for (size_t y = voxelIndex; y < voxelIndex + 1 && y < modelData.height; ++y)
-            for (size_t y = 0; y < modelData.height; ++y)
+            for (size_t y = voxelIndex; y < voxelIndex + 1 && y < modelData.height; ++y)
+            //for (size_t y = 0; y < modelData.height; ++y)
             {
                 for (size_t x = 0; x < modelData.width; ++x)
                 {
