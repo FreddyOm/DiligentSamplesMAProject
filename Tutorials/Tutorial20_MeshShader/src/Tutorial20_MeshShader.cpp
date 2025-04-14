@@ -413,16 +413,13 @@ namespace Diligent
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pVoxelPosBuffer);
         VERIFY_EXPR(m_pVoxelPosBuffer != nullptr);
 
-        _orderedVoxelDataBuffer.clear();
+        //_orderedVoxelDataBuffer.clear();
     }
 
     void Tutorial20_MeshShader::BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
     {
         if (octreeNodeBuffer.size() <= 0)
             return;
-        // Realign octree node buffer
-        octreeNodeBuffer.resize(octreeNodeBuffer.size() + ASGroupSize - (octreeNodeBuffer.size() % ASGroupSize));
-        VERIFY_EXPR(octreeNodeBuffer.size() % ASGroupSize == 0);
 
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Octree node buffer";
@@ -440,16 +437,12 @@ namespace Diligent
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pOctreeNodeBuffer);
         VERIFY_EXPR(m_pOctreeNodeBuffer != nullptr);
 
-        octreeNodeBuffer.clear();
+        //octreeNodeBuffer.clear();
     }
     
     void Tutorial20_MeshShader::BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& _depthPrepassOTNodes)
     {
         if (_depthPrepassOTNodes.size() <= 0) return;
-
-        // Realign deoth prepass octree node buffer
-        _depthPrepassOTNodes.resize(_depthPrepassOTNodes.size() + ASGroupSize - (_depthPrepassOTNodes.size() % ASGroupSize));
-        VERIFY_EXPR(_depthPrepassOTNodes.size() % ASGroupSize == 0);
 
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Best occluder nodes buffer";
@@ -466,7 +459,7 @@ namespace Diligent
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pBestOccluderBuffer);
         VERIFY_EXPR(m_pBestOccluderBuffer != nullptr);
 
-        _depthPrepassOTNodes.clear();
+        //_depthPrepassOTNodes.clear();
     }
 
     void Tutorial20_MeshShader::CreatePipelineState()
