@@ -99,9 +99,10 @@ namespace Diligent
     
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Draw tasks buffer";
-        BuffDesc.Usage             = USAGE_DEFAULT;
+        BuffDesc.Usage             = USAGE_DYNAMIC;
         BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
+        BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
         BuffDesc.ElementByteStride = sizeof(DrawTasks[0]);
         BuffDesc.Size              = sizeof(DrawTasks[0]) * static_cast<Uint32>(DrawTasks.size());
     
@@ -177,7 +178,7 @@ namespace Diligent
         delete m_pOcclusionOctreeRoot;
     }
     
-    const std::string model    = "lucy";
+    const std::string model    = "torus";
     const std::string sceneRes = "256";
 
     const std::string fileName = model + "_" + sceneRes;
@@ -188,6 +189,7 @@ namespace Diligent
     std::vector<VoxelOC::OctreeLeafNode> OTLeafNodes{};
     std::vector<VoxelOC::DepthPrepassDrawTask> depthPrepassOTNodes;
     size_t                                     voxelIndex = 0;
+
     
     void Tutorial20_MeshShader::InitializeOctreeFromMesh(std::string meshPath)
     {
@@ -196,17 +198,14 @@ namespace Diligent
         worldBounds            = {{0, 0, 0}, {(float)modelData.width, (float)modelData.height, (float)modelData.depth}};
         m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds, ASGroupSize);
         
-        orderedVoxelDataBuffer.resize(modelData.size);
-        OTLeafNodes.resize(orderedVoxelDataBuffer.size());
-        depthPrepassOTNodes.resize(orderedVoxelDataBuffer.size());
+        orderedVoxelDataBuffer.resize(2400000);
+        OTLeafNodes.resize(40000);
+        depthPrepassOTNodes.resize(8000);
     }
 
     void Tutorial20_MeshShader::InsertNextVoxel()
     {
-        if (voxelIndex > modelData.height) 
-            return;
-
-        /*if (voxelIndex > 0)
+        /*if (voxelIndex > modelData.height) 
             return;*/
 
         // @TODO: To optimize, just loop over get_index() indices and increment until next valid index found.
@@ -214,73 +213,100 @@ namespace Diligent
         //        make up the scene. This will most definetly result in better performance though!
         // Edit: Not currently possible since xyz coords are necessary for construction of voxel bounds!
 
-        // Extract next voxel index
-        for (size_t z = 0; z < modelData.depth ; ++z)
+        if (voxelIndex < modelData.height)
         {
-            for (size_t y = voxelIndex; y < voxelIndex + 1 && y < modelData.height; ++y)
-            //for (size_t y = 0; y < modelData.height; ++y)
+            // Extract next voxel index
+            for (size_t z = 0; z < modelData.depth; ++z)
             {
-                for (size_t x = 0; x < modelData.width; ++x)
+                for (size_t y = voxelIndex; y < voxelIndex + 1 && y < modelData.height; ++y)
+                //for (size_t y = 0; y < modelData.height; ++y)
                 {
-                    size_t index = get_index((int) x, (int) y, (int) z, modelData);
-                    if (modelData.voxels[index] > 0)
+                    for (size_t x = 0; x < modelData.width; ++x)
                     {
-                        AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
-                        OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
-                        m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
+                        size_t index = get_index((int)x, (int)y, (int)z, modelData);
+                        if (modelData.voxels[index] > 0)
+                        {
+                            AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
+                            OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+                            m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
+                        }
                     }
                 }
             }
-        }
-        
-        orderedVoxelDataBuffer.clear();
-        depthPrepassOTNodes.clear();
-        OTLeafNodes.clear();
-        
-        m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
-        m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
 
+            orderedVoxelDataBuffer.clear();
+            depthPrepassOTNodes.clear();
+            OTLeafNodes.clear();
+
+            m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
+            m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
+
+            
         // -------------------------- DEBUG --------------------------
-       
-        #if DILIGENT_DEBUG
 
-        for (auto& voxPos : orderedVoxelDataBuffer)
-        {
-            VERIFY_EXPR(voxPos.BasePosAndScale.w == 1);
-            VERIFY_EXPR(voxPos.BasePosAndScale.x >= 0 && voxPos.BasePosAndScale.x <= modelData.width);
-            VERIFY_EXPR(voxPos.BasePosAndScale.y >= 0 && voxPos.BasePosAndScale.y <= modelData.height);
-            VERIFY_EXPR(voxPos.BasePosAndScale.z >= 0 && voxPos.BasePosAndScale.z <= modelData.depth);
-        }
+#if DILIGENT_DEBUG
+
+            for (auto& voxPos : orderedVoxelDataBuffer)
+            {
+                VERIFY_EXPR(voxPos.BasePosAndScale.w == 1);
+                VERIFY_EXPR(voxPos.BasePosAndScale.x >= 0 && voxPos.BasePosAndScale.x <= modelData.width);
+                VERIFY_EXPR(voxPos.BasePosAndScale.y >= 0 && voxPos.BasePosAndScale.y <= modelData.height);
+                VERIFY_EXPR(voxPos.BasePosAndScale.z >= 0 && voxPos.BasePosAndScale.z <= modelData.depth);
+            }
 
 #endif
 
-        for (auto& task : OTLeafNodes)
-        {
-            VERIFY_EXPR(task.BasePosAndScale.w >= 4);
-        }
+            for (auto& task : OTLeafNodes)
+            {
+                VERIFY_EXPR(task.BasePosAndScale.w >= 4);
+            }
 
-        for (auto& task : depthPrepassOTNodes)
-        {
-            task.BestOccluderCount = static_cast<int>(depthPrepassOTNodes.size());  // This is necessary!
+            for (auto& task : depthPrepassOTNodes)
+            {
+                task.BestOccluderCount = static_cast<int>(depthPrepassOTNodes.size()); // This is necessary!
 #ifdef DILIGENT_DEBUG
-            VERIFY_EXPR(task.BasePositionAndScale.w >= 4);
+                VERIFY_EXPR(task.BasePositionAndScale.w >= 4);
 #endif
-        }
+            }
 
-        // -----------------------------------------------------------
+            // -----------------------------------------------------------
 
-        // Set new draw task count
-        m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size()) + ASGroupSize - (static_cast<Uint32>(OTLeafNodes.size()) % ASGroupSize);
-        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
+            // Set new draw task count
+            m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size()) + ASGroupSize - (static_cast<Uint32>(OTLeafNodes.size()) % ASGroupSize);
+            VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
 
-        // Set new depth pass draw task count
-        m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size()) + ASGroupSize - (static_cast<Uint32>(depthPrepassOTNodes.size()) % ASGroupSize);
-        VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
+            // Set new depth pass draw task count
+            m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size()) + ASGroupSize - (static_cast<Uint32>(depthPrepassOTNodes.size()) % ASGroupSize);
+            VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
+        }       
 
         // Map buffers to GPU
-        m_pImmediateContext->UpdateBuffer(m_pVoxelPosBuffer, 0, orderedVoxelDataBuffer.size(), orderedVoxelDataBuffer.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        m_pImmediateContext->UpdateBuffer(m_pOctreeNodeBuffer, 0, OTLeafNodes.size(), OTLeafNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        m_pImmediateContext->UpdateBuffer(m_pBestOccluderBuffer, 0, depthPrepassOTNodes.size(), depthPrepassOTNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        /*m_pImmediateContext->UpdateBuffer(m_pVoxelPosBuffer, 0, orderedVoxelDataBuffer.size(), orderedVoxelDataBuffer.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->UpdateBuffer(m_pOctreeNodeBuffer, 0, v.size(), OTLeafNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->UpdateBuffer(m_pBestOccluderBuffer, 0, depthPrepassOTNodes.size(), depthPrepassOTNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);*/
+
+        VoxelOC::VoxelBufData* mappedOrderedVoxelDataBuf = nullptr;
+        m_pImmediateContext->MapBuffer(m_pVoxelPosBuffer, MAP_WRITE, MAP_FLAG_DISCARD, reinterpret_cast<PVoid&>(mappedOrderedVoxelDataBuf));
+
+        memcpy(&mappedOrderedVoxelDataBuf[0], &orderedVoxelDataBuffer[0], orderedVoxelDataBuffer.size() * sizeof(VoxelOC::VoxelBufData));
+
+        m_pImmediateContext->UnmapBuffer(m_pVoxelPosBuffer, MAP_WRITE);
+
+
+        VoxelOC::OctreeLeafNode* otLeafNodes = nullptr;
+        m_pImmediateContext->MapBuffer(m_pOctreeNodeBuffer, MAP_WRITE, MAP_FLAG_DISCARD, reinterpret_cast<PVoid&>(otLeafNodes));
+
+        memcpy(&otLeafNodes[0], &OTLeafNodes[0], OTLeafNodes.size() * sizeof(VoxelOC::OctreeLeafNode));
+
+        m_pImmediateContext->UnmapBuffer(m_pOctreeNodeBuffer, MAP_WRITE);
+
+        
+        VoxelOC::DepthPrepassDrawTask* depthPrepassNodes = nullptr;
+        m_pImmediateContext->MapBuffer(m_pBestOccluderBuffer, MAP_WRITE, MAP_FLAG_DISCARD, reinterpret_cast<PVoid&>(depthPrepassNodes));
+
+        memcpy(&depthPrepassNodes[0], &depthPrepassOTNodes[0], depthPrepassOTNodes.size() * sizeof(VoxelOC::DepthPrepassDrawTask));
+
+        m_pImmediateContext->UnmapBuffer(m_pBestOccluderBuffer, MAP_WRITE);
 
         ++voxelIndex;
     }
@@ -399,10 +425,10 @@ namespace Diligent
 
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Ordered voxel data buffer";
-        BuffDesc.Usage             = USAGE_DEFAULT;
+        BuffDesc.Usage             = USAGE_DYNAMIC;
         BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
-        //BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
+        BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
         BuffDesc.ElementByteStride = sizeof(_orderedVoxelDataBuffer[0]);
         BuffDesc.Size              = sizeof(_orderedVoxelDataBuffer[0]) * static_cast<Uint32>(_orderedVoxelDataBuffer.size());
 
@@ -412,8 +438,6 @@ namespace Diligent
 
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pVoxelPosBuffer);
         VERIFY_EXPR(m_pVoxelPosBuffer != nullptr);
-
-        //_orderedVoxelDataBuffer.clear();
     }
 
     void Tutorial20_MeshShader::BindOctreeNodeBuffer(std::vector<VoxelOC::OctreeLeafNode>& octreeNodeBuffer)
@@ -423,10 +447,10 @@ namespace Diligent
 
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Octree node buffer";
-        BuffDesc.Usage             = USAGE_DEFAULT;
+        BuffDesc.Usage             = USAGE_DYNAMIC;
         BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
-        //BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
+        BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
         BuffDesc.ElementByteStride = sizeof(octreeNodeBuffer[0]);
         BuffDesc.Size              = sizeof(octreeNodeBuffer[0]) * static_cast<Uint32>(octreeNodeBuffer.size());
 
@@ -436,8 +460,6 @@ namespace Diligent
 
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pOctreeNodeBuffer);
         VERIFY_EXPR(m_pOctreeNodeBuffer != nullptr);
-
-        //octreeNodeBuffer.clear();
     }
     
     void Tutorial20_MeshShader::BindBestOccluderBuffer(std::vector<VoxelOC::DepthPrepassDrawTask>& _depthPrepassOTNodes)
@@ -446,9 +468,10 @@ namespace Diligent
 
         BufferDesc BuffDesc;
         BuffDesc.Name              = "Best occluder nodes buffer";
-        BuffDesc.Usage             = USAGE_DEFAULT;
+        BuffDesc.Usage             = USAGE_DYNAMIC;
         BuffDesc.BindFlags         = BIND_SHADER_RESOURCE;
         BuffDesc.Mode              = BUFFER_MODE_STRUCTURED;
+        BuffDesc.CPUAccessFlags    = CPU_ACCESS_WRITE;
         BuffDesc.ElementByteStride = sizeof(_depthPrepassOTNodes[0]);
         BuffDesc.Size              = sizeof(_depthPrepassOTNodes[0]) * static_cast<Uint32>(_depthPrepassOTNodes.size());
 
@@ -456,10 +479,9 @@ namespace Diligent
         BufData.pData    = NULL;
         BufData.DataSize = BuffDesc.Size;
 
+
         m_pDevice->CreateBuffer(BuffDesc, &BufData, &m_pBestOccluderBuffer);
         VERIFY_EXPR(m_pBestOccluderBuffer != nullptr);
-
-        //_depthPrepassOTNodes.clear();
     }
 
     void Tutorial20_MeshShader::CreatePipelineState()
@@ -1021,16 +1043,9 @@ namespace Diligent
         BindOctreeNodeBuffer(OTLeafNodes);
         BindBestOccluderBuffer(depthPrepassOTNodes);
 
-        // Set draw task count
-        m_DrawTaskCount = static_cast<Uint32>(OTLeafNodes.size());
-        VERIFY_EXPR(m_DrawTaskCount % ASGroupSize == 0);
-
-        m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size());
-        VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
-
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
-        CreatePipelineState();
+        CreatePipelineState();        
     }
 
     float angle = 0.0f;

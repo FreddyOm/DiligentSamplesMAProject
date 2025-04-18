@@ -23,6 +23,39 @@ namespace VoxelOC
                 && BasePosAndScale.y == other.BasePosAndScale.y
                 && BasePosAndScale.z == other.BasePosAndScale.z;
         }
+
+        /*void operator=(const OctreeLeafNode& other)
+        {
+            BasePosAndScale = other.BasePosAndScale;
+            RandomValue     = other.RandomValue;
+
+            VoxelBufStartIndex = other.VoxelBufStartIndex;
+            VoxelBufIndexCount = other.VoxelBufIndexCount;
+
+            Padding[0]         = other.Padding[0];
+            Padding[1]         = other.Padding[1];
+        }
+
+        void operator=(OctreeLeafNode&& other) noexcept
+        {
+            BasePosAndScale    = other.BasePosAndScale;
+            RandomValue        = other.RandomValue;
+            
+            VoxelBufStartIndex = other.VoxelBufStartIndex;
+            VoxelBufIndexCount = other.VoxelBufIndexCount;
+
+            Padding[0]         = other.Padding[0];
+            Padding[1]         = other.Padding[1];
+
+            other.BasePosAndScale = {0,0,0,0};
+            other.RandomValue     = {0,0,0,0};
+
+            other.VoxelBufStartIndex = 0;
+            other.VoxelBufIndexCount = 0;
+
+            other.Padding[0] = 0;
+            other.Padding[1] = 0;
+        }*/
     };
 
     // Draw task for depth pre pass
@@ -39,12 +72,20 @@ namespace VoxelOC
             BasePositionAndScale(other.BasePositionAndScale),
             BestOccluderCount(other.BestOccluderCount)
         { }
+
+        void operator=(const DepthPrepassDrawTask& other)
+        {
+            BasePositionAndScale = other.BasePositionAndScale;
+            BestOccluderCount    = other.BestOccluderCount;
+            memset(&Padding[0], 0, 3 * sizeof(Padding[0]));
+        }
     };
 
     // Global voxel position data
     struct VoxelBufData
     {
         DirectX::XMFLOAT4 BasePosAndScale; // [ x, y, z, scale ]
+
     };
 }
 
