@@ -201,10 +201,9 @@ void main(in uint I  : SV_GroupIndex,
     uint cullVoxel = 0;
     cullVoxel += !(node.VoxelBufDataCount > 0);
     cullVoxel += !(I < node.VoxelBufDataCount);
-    cullVoxel += (GetRenderOption(2) == true && IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
-    cullVoxel += (GetRenderOption(1) == false || IsVisible(node, I)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(2) && IsInCameraFrustum(node.BasePosAndScale)) ? 0 : 1;
+    cullVoxel += (GetRenderOption(1) == 0 || IsVisible(node, I)) ? 0 : 1;
     cullVoxel += (GetRenderOption(3) == 0 || (node.VoxelBufDataCount >= GROUP_SIZE && node.BasePosAndScale.w <= 4)) ? 0 : 1;
-    //cullVoxel += node.VoxelBufDataCount == GROUP_SIZE;
     
     if (cullVoxel == 0) // only draw valid voxels
     {
