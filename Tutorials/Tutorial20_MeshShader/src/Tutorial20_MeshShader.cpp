@@ -45,8 +45,9 @@
 
 extern std::vector<AABB> OTVoxelBoundBuffer;
 
-
-
+#ifndef TESTING_ANIM
+//#define TESTING_ANIM
+#endif
 
 namespace Diligent
 {
@@ -178,7 +179,7 @@ namespace Diligent
         delete m_pOcclusionOctreeRoot;
     }
     
-    const std::string model    = "torus";
+    const std::string model    = "bunny";
     const std::string sceneRes = "256";
 
     const std::string fileName = model + "_" + sceneRes;
@@ -198,20 +199,16 @@ namespace Diligent
         worldBounds            = {{0, 0, 0}, {(float)modelData.width, (float)modelData.height, (float)modelData.depth}};
         m_pOcclusionOctreeRoot = new OctreeNode<VoxelOC::OctreeLeafNode>(worldBounds, OTVoxelBoundBuffer, (size_t)(worldBounds.max.x - worldBounds.min.x), worldBounds, ASGroupSize);
         
-        orderedVoxelDataBuffer.resize(2400000);
-        OTLeafNodes.resize(40000);
-        depthPrepassOTNodes.resize(8000);
+        orderedVoxelDataBuffer.resize(modelData.size);
+        OTLeafNodes.resize(modelData.size / ASGroupSize);
+        depthPrepassOTNodes.resize(modelData.size / ASGroupSize);
     }
 
     void Tutorial20_MeshShader::InsertNextVoxel()
     {
-        /*if (voxelIndex > modelData.height) 
-            return;*/
-
-        // @TODO: To optimize, just loop over get_index() indices and increment until next valid index found.
-        //        This will not result in a spatial-agnostic build-up, but will "randomly" spawn the voxels that 
-        //        make up the scene. This will most definetly result in better performance though!
-        // Edit: Not currently possible since xyz coords are necessary for construction of voxel bounds!
+#ifdef TESTING_ANIM
+        updateTimer.Restart();
+#endif
 
         if (voxelIndex < modelData.height)
         {
@@ -253,13 +250,12 @@ namespace Diligent
                 VERIFY_EXPR(voxPos.BasePosAndScale.y >= 0 && voxPos.BasePosAndScale.y <= modelData.height);
                 VERIFY_EXPR(voxPos.BasePosAndScale.z >= 0 && voxPos.BasePosAndScale.z <= modelData.depth);
             }
-
-#endif
-
+            
             for (auto& task : OTLeafNodes)
             {
                 VERIFY_EXPR(task.BasePosAndScale.w >= 4);
             }
+#endif
 
             for (auto& task : depthPrepassOTNodes)
             {
@@ -279,12 +275,24 @@ namespace Diligent
             m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size()) + ASGroupSize - (static_cast<Uint32>(depthPrepassOTNodes.size()) % ASGroupSize);
             VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
         }       
+        
+        MapGPUBuffers();
 
-        // Map buffers to GPU
-        /*m_pImmediateContext->UpdateBuffer(m_pVoxelPosBuffer, 0, orderedVoxelDataBuffer.size(), orderedVoxelDataBuffer.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        m_pImmediateContext->UpdateBuffer(m_pOctreeNodeBuffer, 0, v.size(), OTLeafNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        m_pImmediateContext->UpdateBuffer(m_pBestOccluderBuffer, 0, depthPrepassOTNodes.size(), depthPrepassOTNodes.data(), RESOURCE_STATE_TRANSITION_MODE_TRANSITION);*/
+        ++voxelIndex;
 
+#ifdef TESTING_ANIM
+        float updateTime = updateTimer.GetElapsedTimef();
+
+        std::fstream queryBOFile;
+        queryBOFile.open("C://Users//fredd//Desktop//MAExperiment//" + fileName + "_queryBO.csv", std::ios_base::out);
+
+        queryBOFile << queryTime;
+        queryBOFile.close();
+#endif
+    }
+
+    void Tutorial20_MeshShader::MapGPUBuffers() const
+    {
         VoxelOC::VoxelBufData* mappedOrderedVoxelDataBuf = nullptr;
         m_pImmediateContext->MapBuffer(m_pVoxelPosBuffer, MAP_WRITE, MAP_FLAG_DISCARD, reinterpret_cast<PVoid&>(mappedOrderedVoxelDataBuf));
 
@@ -300,15 +308,13 @@ namespace Diligent
 
         m_pImmediateContext->UnmapBuffer(m_pOctreeNodeBuffer, MAP_WRITE);
 
-        
+
         VoxelOC::DepthPrepassDrawTask* depthPrepassNodes = nullptr;
         m_pImmediateContext->MapBuffer(m_pBestOccluderBuffer, MAP_WRITE, MAP_FLAG_DISCARD, reinterpret_cast<PVoid&>(depthPrepassNodes));
 
         memcpy(&depthPrepassNodes[0], &depthPrepassOTNodes[0], depthPrepassOTNodes.size() * sizeof(VoxelOC::DepthPrepassDrawTask));
 
         m_pImmediateContext->UnmapBuffer(m_pBestOccluderBuffer, MAP_WRITE);
-
-        ++voxelIndex;
     }
 
     void Tutorial20_MeshShader::CreateDrawTasksFromMesh(std::string meshPath)
@@ -1045,14 +1051,13 @@ namespace Diligent
 
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
-        CreatePipelineState();        
+        CreatePipelineState();      
+
+        fpc.SetPos({80, 130, -310});
+        fpc.SetRotation(0, .0f);
     }
 
     float angle = 0.0f;
-
-#ifndef TESTING_ANIM
-//#define TESTING_ANIM
-#endif
 
     void Tutorial20_MeshShader::Render()
     {
@@ -1115,8 +1120,7 @@ namespace Diligent
                 m_pImmediateContext->SetRenderTargets(0, nullptr, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
                 m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
             }
-
-        }        
+        }
 
         // Reset pipeline state to normally draw to back buffer
         m_pImmediateContext->SetPipelineState(m_pPSO);
@@ -1237,7 +1241,7 @@ namespace Diligent
         if (angle >= 2.0f * PI_F)
         {
 
-           /* std::fstream frameUpdateFile;
+            std::fstream frameUpdateFile;
             frameUpdateFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_updateTime.csv", std::ios_base::out);
 
             frameUpdateFile << "frame,time\n";
@@ -1269,7 +1273,7 @@ namespace Diligent
             frameRenderTimes.clear();
             completeFrameTimes.clear();
 
-            SampleBase::~SampleBase();*/
+            SampleBase::~SampleBase();
         }
             
         // Calculate orbiting camera position - switched sin/cos for correct rotation direction
@@ -1307,7 +1311,6 @@ namespace Diligent
         // Compute view and view-projection matrices
         m_ViewMatrix = View * SrfPreTransform;
         m_ViewProjMatrix = m_ViewMatrix * Proj;
-
 
         frameUpdateTimes.push_back(updateTimer.GetElapsedTime());
     }

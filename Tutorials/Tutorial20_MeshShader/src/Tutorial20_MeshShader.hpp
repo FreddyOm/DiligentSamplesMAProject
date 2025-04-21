@@ -52,6 +52,7 @@ namespace Diligent
     private:
         void InitializeOctreeFromMesh(std::string meshPath);
         void InsertNextVoxel();
+        void MapGPUBuffers() const;
         void CreateDrawTasksFromMesh(std::string meshPath);
         void PopulateOctree(std::string OTmodelPath);
         void CreateDrawTasks();
