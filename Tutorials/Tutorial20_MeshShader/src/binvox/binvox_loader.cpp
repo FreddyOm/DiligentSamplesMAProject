@@ -80,15 +80,15 @@ BinvoxData read_binvox(string filespec)
 
 
     data.size   = data.width * data.height * data.depth;
-    data.voxels = new byte[data.size];
+    data.voxels = new ::byte[data.size];
 
     VERIFY_EXPR(data.voxels != nullptr);
 
     //
     // read voxel data
     //
-    byte value;
-    byte count;
+    ::byte value;
+    ::byte count;
     int  index     = 0;
     int  end_index = 0;
     int  nr_voxels = 0;

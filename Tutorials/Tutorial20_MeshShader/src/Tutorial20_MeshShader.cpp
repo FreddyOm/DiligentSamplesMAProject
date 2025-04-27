@@ -42,12 +42,14 @@
 #include "binvox/binvox_loader.h"
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 
 extern std::vector<AABB> OTVoxelBoundBuffer;
 
 #ifndef TESTING_ANIM
 //#define TESTING_ANIM
 #endif
+
 
 namespace Diligent
 {
@@ -179,18 +181,26 @@ namespace Diligent
         delete m_pOcclusionOctreeRoot;
     }
     
-    const std::string model    = "bunny";
+    std::string model    = "bunny";
     const std::string sceneRes = "256";
 
-    const std::string fileName = model + "_" + sceneRes;
+    std::string fileName = model + "_" + sceneRes;
     BinvoxData        modelData{};
     AABB              worldBounds{};
 
-    std::vector<VoxelOC::VoxelBufData> orderedVoxelDataBuffer{};
-    std::vector<VoxelOC::OctreeLeafNode> OTLeafNodes{};
+    std::string config[9];
+    float Radius        = 400.0f;
+    float CameraHeight  = 100.0f;
+    float RotationSpeed = 0.05f;
+
+    float3 cameraPosition{80, 130, -310};
+    float2 cameraRotation{0, 0};
+
+    std::vector<VoxelOC::VoxelBufData>         orderedVoxelDataBuffer{};
+    std::vector<VoxelOC::OctreeLeafNode>       OTLeafNodes{};
     std::vector<VoxelOC::DepthPrepassDrawTask> depthPrepassOTNodes;
     size_t                                     voxelIndex = 0;
-
+    size_t                                     nextSceneIndex = 0;
     
     void Tutorial20_MeshShader::InitializeOctreeFromMesh(std::string meshPath)
     {
@@ -207,26 +217,48 @@ namespace Diligent
     void Tutorial20_MeshShader::InsertNextVoxel()
     {
 #ifdef TESTING_ANIM
-        updateTimer.Restart();
+        updateSceneDataTimer.Restart();
 #endif
 
-        if (voxelIndex < modelData.height)
+        if (voxelIndex < 256 && nextSceneIndex < modelData.size)
         {
             // Extract next voxel index
-            for (size_t z = 0; z < modelData.depth; ++z)
+            //for (size_t z = 0; z < modelData.depth; ++z)
+            //{
+            //    for (size_t y = voxelIndex; y < voxelIndex + 1 && y < modelData.height; ++y)
+            //    //for (size_t y = 0; y < modelData.height; ++y)
+            //    {
+            //        for (size_t x = 0; x < modelData.width; ++x)
+            //        {
+            //            size_t index = get_index((int)x, (int)y, (int)z, modelData);
+            //            if (modelData.voxels[index] > 0)
+            //            {
+            //                AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
+            //                OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+            //                m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
+            //            }
+            //        }
+            //    }
+            //}
+
+            for (size_t index = nextSceneIndex; index < modelData.size; ++index)
             {
-                for (size_t y = voxelIndex; y < voxelIndex + 1 && y < modelData.height; ++y)
-                //for (size_t y = 0; y < modelData.height; ++y)
+                if (modelData.voxels[index] > 0)
                 {
-                    for (size_t x = 0; x < modelData.width; ++x)
+                    size_t tempIndex = index;
+                    int y = (int) tempIndex % modelData.width; tempIndex = (index - y) / modelData.width;
+
+                    int z = (int) tempIndex % modelData.height;
+                    int x = (int) (tempIndex - z) / modelData.width;
+
+                    AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
+                    OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+                    m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
+
+                    if ((index - nextSceneIndex) >= 256 * 256)
                     {
-                        size_t index = get_index((int)x, (int)y, (int)z, modelData);
-                        if (modelData.voxels[index] > 0)
-                        {
-                            AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
-                            OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
-                            m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
-                        }
+                        nextSceneIndex = index + 1;
+                        break;
                     }
                 }
             }
@@ -238,8 +270,8 @@ namespace Diligent
             m_pOcclusionOctreeRoot->QueryAllNodes(orderedVoxelDataBuffer, OTLeafNodes);
             m_pOcclusionOctreeRoot->QueryBestOccluders(depthPrepassOTNodes);
 
-            
-        // -------------------------- DEBUG --------------------------
+
+            // -------------------------- DEBUG --------------------------
 
 #if DILIGENT_DEBUG
 
@@ -250,7 +282,7 @@ namespace Diligent
                 VERIFY_EXPR(voxPos.BasePosAndScale.y >= 0 && voxPos.BasePosAndScale.y <= modelData.height);
                 VERIFY_EXPR(voxPos.BasePosAndScale.z >= 0 && voxPos.BasePosAndScale.z <= modelData.depth);
             }
-            
+
             for (auto& task : OTLeafNodes)
             {
                 VERIFY_EXPR(task.BasePosAndScale.w >= 4);
@@ -274,21 +306,20 @@ namespace Diligent
             // Set new depth pass draw task count
             m_DepthPassDrawTaskCount = static_cast<Uint32>(depthPrepassOTNodes.size()) + ASGroupSize - (static_cast<Uint32>(depthPrepassOTNodes.size()) % ASGroupSize);
             VERIFY_EXPR(m_DepthPassDrawTaskCount % ASGroupSize == 0);
-        }       
-        
-        MapGPUBuffers();
-
-        ++voxelIndex;
+        }
 
 #ifdef TESTING_ANIM
-        float updateTime = updateTimer.GetElapsedTimef();
-
-        std::fstream queryBOFile;
-        queryBOFile.open("C://Users//fredd//Desktop//MAExperiment//" + fileName + "_queryBO.csv", std::ios_base::out);
-
-        queryBOFile << queryTime;
-        queryBOFile.close();
+            updateSceneDataTimes.push_back(updateSceneDataTimer.GetElapsedTime());
+            updateGPUBufferTimer.Restart();
 #endif
+
+            MapGPUBuffers();
+
+#ifdef TESTING_ANIM
+            mapGPUBufferTimes.push_back(updateGPUBufferTimer.GetElapsedTime());
+#endif
+        
+        ++voxelIndex;
     }
 
     void Tutorial20_MeshShader::MapGPUBuffers() const
@@ -309,12 +340,15 @@ namespace Diligent
         m_pImmediateContext->UnmapBuffer(m_pOctreeNodeBuffer, MAP_WRITE);
 
 
-        VoxelOC::DepthPrepassDrawTask* depthPrepassNodes = nullptr;
-        m_pImmediateContext->MapBuffer(m_pBestOccluderBuffer, MAP_WRITE, MAP_FLAG_DISCARD, reinterpret_cast<PVoid&>(depthPrepassNodes));
+        if (depthPrepassOTNodes.size() > 0)
+        {
+            VoxelOC::DepthPrepassDrawTask* depthPrepassNodes = nullptr;
+            m_pImmediateContext->MapBuffer(m_pBestOccluderBuffer, MAP_WRITE, MAP_FLAG_DISCARD, reinterpret_cast<PVoid&>(depthPrepassNodes));
 
-        memcpy(&depthPrepassNodes[0], &depthPrepassOTNodes[0], depthPrepassOTNodes.size() * sizeof(VoxelOC::DepthPrepassDrawTask));
+            memcpy(&depthPrepassNodes[0], &depthPrepassOTNodes[0], depthPrepassOTNodes.size() * sizeof(VoxelOC::DepthPrepassDrawTask));
 
-        m_pImmediateContext->UnmapBuffer(m_pBestOccluderBuffer, MAP_WRITE);
+            m_pImmediateContext->UnmapBuffer(m_pBestOccluderBuffer, MAP_WRITE);
+        }
     }
 
     void Tutorial20_MeshShader::CreateDrawTasksFromMesh(std::string meshPath)
@@ -1028,19 +1062,20 @@ namespace Diligent
     void Tutorial20_MeshShader::Initialize(const SampleInitInfo& InitInfo)
     {
         SampleBase::Initialize(InitInfo);
-    
+        ReadConfig();
+
         visibleVoxels.reserve(30000);
         visibleOctreeNodes.reserve(30000);
+
         frameRenderTimes.reserve(30000);
-        frameUpdateTimes.reserve(30000);
-        completeFrameTimes.reserve(30000);
+        mapGPUBufferTimes.reserve(30000);
+        updateSceneDataTimes.reserve(30000);
 
         fpc.SetMoveSpeed(30.f);
-        fpc.SetPos({80, 130, 20});
-        fpc.SetRotation(0, 0);
+        fpc.SetPos(cameraPosition);
+        fpc.SetRotation(cameraRotation.x, cameraRotation.y);
         
         LoadTexture();
-        //CreateDrawTasks();
         InitializeOctreeFromMesh("models/binvox/" + fileName + ".binvox");
         //CreateDrawTasksFromMesh("models/binvox/" + fileName + ".binvox");
 
@@ -1051,17 +1086,54 @@ namespace Diligent
 
         CreateStatisticsBuffer();
         CreateConstantsBuffer();
-        CreatePipelineState();      
+        CreatePipelineState();
+    }
 
-        fpc.SetPos({80, 130, -310});
-        fpc.SetRotation(0, .0f);
+    void Tutorial20_MeshShader::ReadConfig()
+    {
+        std::string line;
+        std::string configFilePath = std::filesystem::current_path().generic_string();
+        configFilePath += std::string("/performance_test.config");    
+        
+        std::ifstream configFile(configFilePath);
+
+        if (configFile.is_open())
+        {
+            int lineIndex = 0;
+            while (getline(configFile, line))
+            {
+                config[lineIndex++] = line;
+            }
+            configFile.close();
+        }
+
+        else
+            std::cout << "Unable to open file";
+
+        // Set model name
+        model = config[0];
+        fileName = model + "_" + sceneRes;
+
+        // Set rotation speed
+        RotationSpeed = std::stoi(config[1]) == 0 ? 0 : RotationSpeed;
+        
+        // Set culling mechanism
+        int cullMode = std::stoi(config[2]);
+        m_OcclusionCulling = cullMode >= 0;
+
+        if (cullMode >= 0)
+            m_CullMode = cullMode;
+
+        // Set camera position
+        SceneCenter.x    = std::stof(config[3]);
+        SceneCenter.y    = std::stof(config[4]);
+        SceneCenter.z    = std::stof(config[5]);
     }
 
     float angle = 0.0f;
 
     void Tutorial20_MeshShader::Render()
     {
-        renderTimer.Restart();
         auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
         auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
         // Clear the back buffer and depth buffer
@@ -1186,7 +1258,7 @@ namespace Diligent
             else 
             {
                 std::fstream vizVoxelFile;
-                vizVoxelFile.open(".\\profiling\\" + fileName + "_voxels.csv", std::ios_base::out);
+                vizVoxelFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_voxels.csv", std::ios_base::out);
 
                 vizVoxelFile << "frame,visible_voxels\n"; 
 
@@ -1197,7 +1269,7 @@ namespace Diligent
                 vizVoxelFile.close();
 
                 std::fstream vizOctreeFile;
-                vizOctreeFile.open(".\\profiling\\" + fileName + "_nodes.csv", std::ios_base::out);
+                vizOctreeFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_nodes.csv", std::ios_base::out);
 
                 vizOctreeFile << "frame,visible_nodes\n";
 
@@ -1210,7 +1282,6 @@ namespace Diligent
             }
 #endif
 #endif
-
             m_pImmediateContext->SetRenderTargets(0, nullptr, nullptr, RESOURCE_STATE_TRANSITION_MODE_NONE);
             m_pImmediateContext->Flush();
             m_pImmediateContext->FinishFrame();
@@ -1222,59 +1293,58 @@ namespace Diligent
     }
 
     void Tutorial20_MeshShader::Update(double CurrTime, double ElapsedTime)
-    {
-        completeFrameTimes.push_back(updateTimer.GetElapsedTime());
-        updateTimer.Restart();
-        
+    {        
+        renderTimer.Restart();
         SampleBase::Update(CurrTime, ElapsedTime);
         UpdateUI();
 
         InsertNextVoxel();
         
-#ifdef TESTING_ANIM
+#ifdef TESTING_ANIM 
 
         // Fixed center point (the model's center)
-        const float  Radius        = 400.0f;
-        const float  CameraHeight  = 100.0f;
-        const float  RotationSpeed = 0.05f;
-
         if (angle >= 2.0f * PI_F)
         {
+            //std::fstream mapGPUBufFile;
+            //mapGPUBufFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_updateGPUDataTime.csv", std::ios_base::out);
 
-            std::fstream frameUpdateFile;
-            frameUpdateFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_updateTime.csv", std::ios_base::out);
+            //mapGPUBufFile << "frame,time\n";
 
-            frameUpdateFile << "frame,time\n";
+            //for (int i = 0; i < mapGPUBufferTimes.size(); i++)
+            //    mapGPUBufFile << i << ',' << mapGPUBufferTimes[i] << ',' << "\n";
+            //mapGPUBufFile.close();
+            //
+            //// -------------------------------------------------------------------------------------
 
-            for (int i = 0; i < frameUpdateTimes.size(); i++)
-                frameUpdateFile << i << ',' << frameUpdateTimes[i] << ',' << "\n";
-            frameUpdateFile.close();
+            //std::fstream sceneUpdateFile;
+            //sceneUpdateFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_updateSceneDataTime.csv", std::ios_base::out);
 
+            //sceneUpdateFile << "frame,time\n";
+            //
+            //for (int i = 0; i < updateSceneDataTimes.size(); i++)
+            //    sceneUpdateFile << i << ',' << updateSceneDataTimes[i] << ',' << "\n";
+            //sceneUpdateFile.close();
 
-            std::fstream frameRenderFile;
-            frameRenderFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_renderTime.csv", std::ios_base::out);
+            //// -------------------------------------------------------------------------------------
+
+            /*std::fstream frameRenderFile;
+            frameRenderFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_frameTime.csv", std::ios_base::out);
 
             frameRenderFile << "frame,time\n";
 
             for (int i = 0; i < frameRenderTimes.size(); i++)
                 frameRenderFile << i << ',' << frameRenderTimes[i] << ',' << "\n";
-            frameRenderFile.close();
+            frameRenderFile.close();*/
 
-            std::fstream completeFrameTimeFile;
-            completeFrameTimeFile.open("C://Users//studmin//Desktop//MAExperiment//" + fileName + "_frameTime.csv", std::ios_base::out);
+            // -------------------------------------------------------------------------------------
 
-            completeFrameTimeFile << "frame,time\n";
-
-            for (int i = 0; i < completeFrameTimes.size(); i++)
-                completeFrameTimeFile << i << ',' << completeFrameTimes[i] << ',' << "\n";
-            completeFrameTimeFile.close();
-
-            frameUpdateTimes.clear();
+            updateSceneDataTimes.clear();
+            mapGPUBufferTimes.clear();
             frameRenderTimes.clear();
-            completeFrameTimes.clear();
 
             SampleBase::~SampleBase();
         }
+#endif
             
         // Calculate orbiting camera position - switched sin/cos for correct rotation direction
         angle    = static_cast<float>(CurrTime) * RotationSpeed * 2.0f * PI_F;
@@ -1295,8 +1365,7 @@ namespace Diligent
         // Set camera orientation to look at center
         fpc.SetRotation(-yaw, pitch); // Negated yaw to correct rotation direction
     
-#endif
-
+        
         fpc.Update(GetInputController(), (float)ElapsedTime);
 
         // Set camera position
@@ -1311,8 +1380,6 @@ namespace Diligent
         // Compute view and view-projection matrices
         m_ViewMatrix = View * SrfPreTransform;
         m_ViewProjMatrix = m_ViewMatrix * Proj;
-
-        frameUpdateTimes.push_back(updateTimer.GetElapsedTime());
     }
 
 } // namespace Diligent

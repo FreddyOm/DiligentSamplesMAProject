@@ -50,6 +50,7 @@ namespace Diligent
         ~Tutorial20_MeshShader();
     
     private:
+        void ReadConfig();
         void InitializeOctreeFromMesh(std::string meshPath);
         void InsertNextVoxel();
         void MapGPUBuffers() const;
@@ -148,12 +149,13 @@ namespace Diligent
         std::vector<unsigned long long> visibleVoxels;
         std::vector<unsigned long long> visibleOctreeNodes;
 
-        Timer               updateTimer;
+        Timer               updateSceneDataTimer;
+        Timer               updateGPUBufferTimer;
         Timer               renderTimer;
-        std::vector<double> frameUpdateTimes;
-        std::vector<double> frameRenderTimes;
-        std::vector<double> completeFrameTimes; 
 
+        std::vector<double> updateSceneDataTimes;
+        std::vector<double> mapGPUBufferTimes;
+        std::vector<double> frameRenderTimes;
 
         OctreeNode<VoxelOC::OctreeLeafNode>* m_pOcclusionOctreeRoot = nullptr;
     };
