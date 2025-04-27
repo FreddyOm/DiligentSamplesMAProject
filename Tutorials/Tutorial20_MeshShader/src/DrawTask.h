@@ -52,7 +52,6 @@ namespace VoxelOC
     struct VoxelBufData
     {
         DirectX::XMFLOAT4 BasePosAndScale; // [ x, y, z, scale ]
-
     };
 }
 

@@ -58,6 +58,9 @@ public:
             }
         }
 
+        // Only insert nodes which actually store voxels. Makes it easier to iterate in depth pre-pass
+        if (objectIndices.size() == 0) return;
+        
         // Create octree node data for gpu
         VoxelOC::OctreeLeafNode ocNode;
         ocNode.VoxelBufStartIndex = static_cast<int>(orderedVoxelDataBuf.size());
@@ -66,18 +69,12 @@ public:
 
         VERIFY_EXPR(ocNode.VoxelBufIndexCount <= ocNode.BasePosAndScale.w * ocNode.BasePosAndScale.w * ocNode.BasePosAndScale.w);
 
-        if (objectIndices.size() > 0)       // Only insert nodes which actually store voxels. Makes it easier to iterate in depth pre-pass
-            octreeNodeBuffer.push_back(std::move(ocNode));
+        octreeNodeBuffer.emplace_back(std::move(ocNode));
 
         // Add own indices if this node has it's own indices
-        for (int index = 0; index < objectIndices.size(); ++index)
+        for (const auto& index : objectIndices)
         {
-            VoxelOC::VoxelBufData voxelData;
-            voxelData.BasePosAndScale = OTVoxelBoundBuffer[objectIndices[index]].CenterAndScale();
-
-            VERIFY_EXPR(voxelData.BasePosAndScale.w == 1);
-
-            orderedVoxelDataBuf.push_back(std::move(voxelData));
+            orderedVoxelDataBuf.emplace_back(VoxelOC::VoxelBufData{OTVoxelBoundBuffer[index].CenterAndScale()});
         }
     }
 
@@ -92,7 +89,7 @@ public:
                 {
                     VoxelOC::DepthPrepassDrawTask drawTask{};
                     drawTask.BasePositionAndScale = children[i]->bounds.CenterAndScale();
-                    depthPrepassOTNodes.push_back(std::move(drawTask));
+                    depthPrepassOTNodes.emplace_back(std::move(drawTask));
                     continue;
                 }
                 
@@ -152,6 +149,7 @@ public:
     {
         OctreeNode*              currentNode = this;
         std::vector<OctreeNode*> path;
+        path.reserve(32);
 
         while (true)
         {
@@ -160,13 +158,13 @@ public:
                 return;
             }
 
-            path.push_back(currentNode);
+            path.emplace_back(currentNode);
 
             if (currentNode->isLeaf)
             {
                 if (currentNode->objectIndices.size() < maxObjectsPerLeaf)
                 {
-                    currentNode->objectIndices.push_back(objectIndex);
+                    currentNode->objectIndices.emplace_back(objectIndex);
                     return;
                 }
                 else
@@ -183,7 +181,7 @@ public:
                         {
                             if (IntersectAABBPoint(child->bounds, existingBounds.Center()))
                             {
-                                child->objectIndices.push_back(index);
+                                child->objectIndices.emplace_back(index);
                             }
                         }
                     }
@@ -208,7 +206,7 @@ public:
             if (!foundChild)
             {
                 // Object doesn't fit in any child, insert it here
-                currentNode->objectIndices.push_back(objectIndex);
+                currentNode->objectIndices.emplace_back(objectIndex);
                 return;
             }
         }
@@ -268,9 +266,7 @@ public:
 
     bool IsLeafAndTight() const
     {
-        if (!isLeaf) return false;
-
-        return IsTight();
+        return isLeaf && IsTight();
     }
 
     /// <summary>
@@ -279,31 +275,23 @@ public:
     /// <returns>True, if full, false if not</returns>
     bool IsFull() const
     {
-        // Node is leaf and holds the maximum amount of voxels per leaf
-        if (IsLeafAndTight() && objectIndices.size() >= maxObjectsPerLeaf)
+        if (isLeaf)
         {
-            return true;
+            // Node is leaf and holds the maximum amount of voxels per leaf
+            return IsLeafAndTight() && objectIndices.size() >= maxObjectsPerLeaf;
         }
-        else if (isLeaf)
+
+        // If not a leaf node, check if all children are full
+        for (const auto* child : children)
         {
-            return false;
-        }
-        else if (!isLeaf)
-        {
-            // If not a leaf node, check if all children are full
-            for (auto* child : children)    // No check for children necessary since this is not a leaf node!
+            VERIFY_EXPR(child != nullptr);
+
+            if (!child->IsFull())
             {
-                VERIFY_EXPR(child != nullptr);
-
-                if (!child->IsFull())
-                    return false;
+                return false;
             }
-
-            return true;
         }
 
-        VERIFY_EXPR(false); // Shouldn't be here!
- 
-        return false;
+        return true;
     }
 };

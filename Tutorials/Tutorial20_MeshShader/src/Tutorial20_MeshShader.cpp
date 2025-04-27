@@ -241,7 +241,7 @@ namespace Diligent
             //    }
             //}
 
-            for (size_t index = nextSceneIndex; index < modelData.size; ++index)
+            for (size_t index = nextSceneIndex; index < nextSceneIndex + 256 * 256; ++index)
             {
                 if (modelData.voxels[index] > 0)
                 {
@@ -252,16 +252,12 @@ namespace Diligent
                     int x = (int) (tempIndex - z) / modelData.width;
 
                     AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
-                    OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+                    OTVoxelBoundBuffer.emplace_back(voxelBounds);
                     m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
-
-                    if ((index - nextSceneIndex) >= 256 * 256)
-                    {
-                        nextSceneIndex = index + 1;
-                        break;
-                    }
                 }
             }
+            
+            nextSceneIndex += 256 * 256 + 1;
 
             orderedVoxelDataBuffer.clear();
             depthPrepassOTNodes.clear();
@@ -309,7 +305,7 @@ namespace Diligent
         }
 
 #ifdef TESTING_ANIM
-            updateSceneDataTimes.push_back(updateSceneDataTimer.GetElapsedTime());
+            updateSceneDataTimes.emplace_back(updateSceneDataTimer.GetElapsedTime());
             updateGPUBufferTimer.Restart();
 #endif
 
@@ -450,7 +446,7 @@ namespace Diligent
                     if (modelData.voxels[index] > 0)
                     {
                         AABB voxelBounds = {{(float)x, (float)y, (float)z}, {x + 1.f, y + 1.f, z + 1.f}};
-                        OTVoxelBoundBuffer.push_back(std::move(voxelBounds));
+                        OTVoxelBoundBuffer.emplace_back(std::move(voxelBounds));
                         m_pOcclusionOctreeRoot->InsertObject(OTVoxelBoundBuffer.size() - 1, voxelBounds);
                     }
                 }
@@ -1289,7 +1285,7 @@ namespace Diligent
             ++m_FrameId;
         }
 
-        frameRenderTimes.push_back(renderTimer.GetElapsedTime());
+        frameRenderTimes.emplace_back(renderTimer.GetElapsedTime());
     }
 
     void Tutorial20_MeshShader::Update(double CurrTime, double ElapsedTime)
